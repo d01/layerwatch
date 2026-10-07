@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "bambumon"
 include(":app")
+include(":protocol")

@@ -13,6 +13,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "bambumon"
+rootProject.name = "layerwatch"
 include(":app")
 include(":protocol")

@@ -1,0 +1,371 @@
+package app.layerwatch.ui.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import app.layerwatch.R
+import app.layerwatch.protocol.AmsUnit
+import app.layerwatch.protocol.PrinterStatus
+import app.layerwatch.protocol.Temperature
+import app.layerwatch.protocol.Tray
+import app.layerwatch.ui.theme.LocalBambuType
+import app.layerwatch.ui.theme.Palette
+
+// ---------- primitives ----------
+
+@Composable
+fun Panel(
+    modifier: Modifier = Modifier,
+    radius: Dp = 20.dp,
+    padding: Dp = 18.dp,
+    verticalArrangement: Arrangement.Vertical = Arrangement.Top,
+    content: @Composable ColumnScope.() -> Unit,
+) = Column(
+    modifier
+        .clip(RoundedCornerShape(radius))
+        .background(Palette.card)
+        .padding(padding),
+    verticalArrangement = verticalArrangement,
+    content = content,
+)
+
+@Composable
+fun Bar(fraction: Float, color: Color, modifier: Modifier = Modifier, height: Dp = 3.dp) {
+    Box(modifier.fillMaxWidth().height(height).clip(RoundedCornerShape(height)).background(Palette.track)) {
+        Box(Modifier.fillMaxHeight().fillMaxWidth(fraction.coerceIn(0f, 1f)).clip(RoundedCornerShape(height)).background(color))
+    }
+}
+
+@Composable
+fun Glyph(res: Int, tint: Color, size: Dp = 18.dp, description: String? = null) =
+    Icon(painterResource(res), contentDescription = description, tint = tint, modifier = Modifier.size(size))
+
+@Composable
+fun Dot(color: Color, size: Dp = 8.dp) = Box(Modifier.size(size).clip(CircleShape).background(color))
+
+// ---------- job ----------
+
+/** Phase, job name, big percent, time left / finish time, progress bar, layer line. */
+@Composable
+fun JobCard(
+    s: PrinterStatus?,
+    nowMs: Long,
+    live: Boolean,
+    modifier: Modifier = Modifier,
+    heroSize: Int = 64,
+    onDetails: (() -> Unit)? = null,
+) {
+    val t = LocalBambuType.current
+    val accent = if (live) Palette.amber else Palette.muted
+    Panel(modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text((s?.let(Format::phase) ?: "Waiting for printer").uppercase(), style = t.eyebrow, color = accent)
+                Text(s?.jobName ?: "—", style = t.jobName, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (onDetails != null && s?.jobState?.isActive == true) DetailsLink(onDetails)
+        }
+        Row(verticalAlignment = Alignment.Bottom) {
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.Bottom) {
+                Text(s?.percent?.toString() ?: "—", style = t.heroNumber.copy(fontSize = heroSize.sp, lineHeight = heroSize.sp), color = Palette.text)
+                Text("%", style = t.heroUnit, color = Palette.muted, modifier = Modifier.padding(start = 2.dp, bottom = 4.dp))
+            }
+            val remaining = s?.remainingMinutes?.takeIf { s.jobState.isActive }
+            if (remaining != null) {
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(Format.duration(remaining), style = t.metric.copy(fontSize = 22.sp), color = Palette.text)
+                    Text("left · done ≈ ${Format.finishTime(nowMs, remaining)}", style = t.label, color = Palette.muted)
+                }
+            }
+        }
+        val pct = s?.percent ?: 0
+        Bar(
+            pct / 100f, accent, height = 6.dp,
+            modifier = Modifier.semantics {
+                contentDescription = "Print progress"
+                progressBarRangeInfo = ProgressBarRangeInfo(pct / 100f, 0f..1f)
+            },
+        )
+        Row {
+            Text(
+                if (s?.layer != null && s.totalLayers != null) "Layer ${s.layer} / ${s.totalLayers}" else "Layer —",
+                style = t.mono, color = Palette.muted, modifier = Modifier.weight(1f),
+            )
+            val trayMaterial = s?.ams?.flatMap { it.trays }?.firstOrNull { it.slot == s.activeSlot }?.material
+            Text(
+                listOfNotNull(s?.nozzleDiameter?.let { "$it mm nozzle" }, trayMaterial).joinToString(" · "),
+                style = t.label, color = Palette.muted,
+            )
+        }
+    }
+}
+
+/** "Details ›" — opens the print details screen. */
+@Composable
+fun DetailsLink(onClick: () -> Unit) {
+    val t = LocalBambuType.current
+    Box(
+        Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp))
+            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "Print details", onClick = onClick)
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) { Text("Details ›", style = t.label.copy(fontWeight = FontWeight.SemiBold), color = Palette.blue) }
+}
+
+// ---------- temperatures ----------
+
+private data class TempRow(val label: String, val temp: Temperature?, val chamber: Double?)
+
+private fun temps(s: PrinterStatus?) = listOf(
+    TempRow("Nozzle", s?.nozzle, null),
+    TempRow("Bed", s?.bed, null),
+    TempRow("Chamber", null, s?.chamberC),
+)
+
+/** Three tiles side by side (folded layout). */
+@Composable
+fun TempTiles(s: PrinterStatus?, live: Boolean, modifier: Modifier = Modifier) {
+    val t = LocalBambuType.current
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        temps(s).forEach { row ->
+            Panel(Modifier.weight(1f), radius = 16.dp, padding = 14.dp, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                val current = row.temp?.current ?: row.chamber
+                val target = row.temp?.target
+                Text(row.label, style = t.caption, color = Palette.muted)
+                Text(Format.temp(current), style = t.metric, color = Palette.text)
+                Text(if (row.temp == null) "passive" else "target ${Format.temp(target)}", style = t.caption, color = Palette.faint)
+                val heating = row.temp?.isHeating == true
+                val frac = if (heating && target != null && current != null) (current / target).toFloat() else ((current ?: 0.0) / 100.0).toFloat()
+                Bar(frac, if (heating && live) Palette.amber else Palette.idleBar)
+            }
+        }
+    }
+}
+
+/** Stacked rows in one panel (unfolded side column). */
+@Composable
+fun TempList(s: PrinterStatus?, live: Boolean, modifier: Modifier = Modifier) {
+    val t = LocalBambuType.current
+    Panel(modifier, padding = 18.dp) {
+        temps(s).forEachIndexed { i, row ->
+            val current = row.temp?.current ?: row.chamber
+            val heating = row.temp?.isHeating == true
+            Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(row.label, style = t.label, color = Palette.muted)
+                    Text(if (row.temp == null) "passive" else "target ${Format.temp(row.temp.target)}", style = t.caption, color = Palette.faint)
+                }
+                Text(Format.temp(current), style = t.metric, color = if (heating && live) Palette.amber else Palette.text)
+            }
+            if (i < 2) Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.hairline))
+        }
+    }
+}
+
+/** Compact tiles for the tabletop lower half. */
+@Composable
+fun TempStrip(s: PrinterStatus?, live: Boolean, modifier: Modifier = Modifier) {
+    val t = LocalBambuType.current
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        temps(s).forEach { row ->
+            val current = row.temp?.current ?: row.chamber
+            val heating = row.temp?.isHeating == true
+            Panel(Modifier.weight(1f), radius = 16.dp, padding = 14.dp) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(row.label, style = t.caption, color = Palette.muted)
+                        Text(
+                            if (row.temp == null) s?.chamberFanPercent?.let { "fan $it%" } ?: "passive" else "target ${Format.temp(row.temp.target)}",
+                            style = t.tiny, color = Palette.faint,
+                        )
+                    }
+                    Text(Format.temp(current), style = t.metric.copy(fontSize = 24.sp), color = if (heating && live) Palette.amber else Palette.text)
+                }
+            }
+        }
+    }
+}
+
+// ---------- AMS ----------
+
+@Composable
+fun Spool(tray: Tray, active: Boolean, size: Dp) {
+    val color = Format.filamentColor(tray.colorHex)
+    val ring = if (active) Palette.amber else Palette.outline
+    Box(
+        Modifier.size(size).clip(CircleShape).border(if (size > 40.dp) 3.dp else 2.dp, ring, CircleShape).padding(if (size > 40.dp) 7.dp else 5.dp),
+    ) {
+        Box(
+            Modifier.fillMaxWidth().fillMaxHeight().clip(CircleShape)
+                .background(color ?: Color.White.copy(alpha = 0.10f))
+                .then(
+                    when {
+                        color == null -> Modifier.border(1.dp, Palette.idleBar, CircleShape)
+                        color.luminance() < 0.08f -> Modifier.border(1.dp, Color(0xFF3A4046), CircleShape)
+                        else -> Modifier
+                    }
+                )
+        )
+    }
+}
+
+private fun Color.luminance() = 0.2126f * red + 0.7152f * green + 0.0722f * blue
+
+private fun amsSummary(unit: AmsUnit) =
+    listOfNotNull(unit.humidityLevel?.let { "humidity $it/5" }, unit.temperatureC?.let { "%.1f °C".format(it) }).joinToString(" · ")
+
+/** Four spools in a grid (folded layout). */
+@Composable
+fun AmsCard(s: PrinterStatus?, modifier: Modifier = Modifier) {
+    val t = LocalBambuType.current
+    val units = s?.ams.orEmpty()
+    if (units.isEmpty()) return
+    units.forEach { unit ->
+        Panel(modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(if (units.size > 1) "AMS ${unit.id + 1}" else "AMS", style = t.section, color = Palette.text, modifier = Modifier.weight(1f))
+                Text(amsSummary(unit), style = t.label, color = Palette.muted)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                unit.trays.forEach { tray ->
+                    val active = tray.slot == s?.activeSlot
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Spool(tray, active, 56.dp)
+                        Text(tray.remainingPercent?.let { "$it%" } ?: "—", style = t.metricSmall, color = Palette.text)
+                        Text(tray.name ?: tray.material ?: "Empty", style = t.tiny, color = Palette.muted, maxLines = 2, lineHeight = 14.sp)
+                        Text(if (active) "Feeding" else "Slot ${tray.slot % 4 + 1}", style = t.tiny.copy(fontWeight = FontWeight.SemiBold), color = if (active) Palette.amber else Palette.faint)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** One spool per row with a remaining bar (unfolded side column). */
+@Composable
+fun AmsList(s: PrinterStatus?, modifier: Modifier = Modifier) {
+    val t = LocalBambuType.current
+    val units = s?.ams.orEmpty()
+    if (units.isEmpty()) return
+    Panel(modifier, padding = 16.dp, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        units.forEach { unit ->
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(if (units.size > 1) "AMS ${unit.id + 1}" else "AMS", style = t.section, color = Palette.text, modifier = Modifier.weight(1f))
+                Text(amsSummary(unit), style = t.caption, color = Palette.muted)
+            }
+            unit.trays.forEach { tray ->
+                val active = tray.slot == s?.activeSlot
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Spool(tray, active, 32.dp)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row {
+                            Text(
+                                (tray.name ?: tray.material ?: "Empty") + if (active) " · feeding" else "",
+                                style = t.label, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                            )
+                            Text(tray.remainingPercent?.let { "$it%" } ?: "—", style = t.mono, color = Palette.text)
+                        }
+                        Bar((tray.remainingPercent ?: 0) / 100f, if (active) Palette.amber else Palette.idleBar)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** A single horizontal strip (tabletop lower half). */
+@Composable
+fun AmsStrip(s: PrinterStatus?, modifier: Modifier = Modifier) {
+    val t = LocalBambuType.current
+    val unit = s?.ams?.firstOrNull() ?: return
+    Panel(modifier, radius = 16.dp, padding = 14.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            Column {
+                Text("AMS", style = t.section, color = Palette.text)
+                Text(amsSummary(unit), style = t.tiny, color = Palette.muted)
+            }
+            unit.trays.forEach { tray ->
+                val active = tray.slot == s.activeSlot
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Spool(tray, active, 34.dp)
+                    Column {
+                        Text(tray.remainingPercent?.let { "$it%" } ?: "—", style = t.metricSmall.copy(fontSize = 14.sp), color = Palette.text)
+                        Text(if (active) "Feeding" else tray.material ?: "Empty", style = t.tiny, color = if (active) Palette.amber else Palette.faint, maxLines = 1)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------- fans ----------
+
+@Composable
+fun FanGrid(s: PrinterStatus?, modifier: Modifier = Modifier, compact: Boolean = false) {
+    val t = LocalBambuType.current
+    val fans = listOf(
+        (if (compact) "Part" else "Part cooling") to s?.partFanPercent,
+        "Aux" to s?.auxFanPercent,
+        "Chamber" to s?.chamberFanPercent,
+        "Heatbreak" to s?.heatbreakFanPercent,
+    )
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        fans.chunked(2).forEach { pair ->
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                pair.forEach { (label, pct) ->
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row {
+                            Text(label, style = if (compact) t.caption else t.label, color = Palette.muted, modifier = Modifier.weight(1f))
+                            Text(pct?.let { "$it%" } ?: "—", style = t.mono, color = Palette.text)
+                        }
+                        Bar((pct ?: 0) / 100f, Palette.blue)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun WifiNote(s: PrinterStatus?, modifier: Modifier = Modifier) {
+    val dbm = s?.wifiDbm ?: return
+    val t = LocalBambuType.current
+    val weak = dbm <= -67
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Glyph(R.drawable.ic_wifi, if (weak) Palette.amber else Palette.faint, 14.dp)
+        Text(
+            "Printer Wi-Fi $dbm dBm" + if (weak) " · weak signal, video is buffered" else "",
+            style = t.caption, color = Palette.faint,
+        )
+    }
+}

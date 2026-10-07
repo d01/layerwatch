@@ -4,19 +4,35 @@ plugins {
 }
 
 android {
-    namespace = "app.bambumon"
+    namespace = "app.layerwatch"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "app.bambumon"
+        applicationId = "app.layerwatch"
         minSdk = 35
         targetSdk = 37
         versionCode = 1
         versionName = "0.1.0"
     }
 
+    // Play upload key, from ~/.gradle/gradle.properties (never the repo). Without it,
+    // release builds are produced unsigned.
+    val uploadStore = providers.gradleProperty("LAYERWATCH_UPLOAD_STORE_FILE").orNull
+    val uploadPassword = providers.gradleProperty("LAYERWATCH_UPLOAD_PASSWORD").orNull
+    signingConfigs {
+        if (uploadStore != null && uploadPassword != null) {
+            create("upload") {
+                storeFile = file(uploadStore)
+                storePassword = uploadPassword
+                keyAlias = "upload"
+                keyPassword = uploadPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfigs.findByName("upload")?.let { signingConfig = it }
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

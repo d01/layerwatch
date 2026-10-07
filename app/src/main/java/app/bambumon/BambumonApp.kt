@@ -4,6 +4,7 @@ import android.app.Application
 import app.bambumon.config.AppSettings
 import app.bambumon.config.PrinterConfigStore
 import app.bambumon.history.PrintHistory
+import app.bambumon.job.JobRepository
 import app.bambumon.printer.NetworkMonitor
 import app.bambumon.printer.PrinterRepository
 import app.bambumon.printer.PrinterTls
@@ -22,11 +23,13 @@ class BambumonApp : Application() {
     val configStore by lazy { PrinterConfigStore(this) }
     val settings by lazy { AppSettings(this) }
     val history by lazy { PrintHistory(File(filesDir, "history")) }
+    val jobs by lazy { JobRepository(appScope, printer, tls, File(cacheDir, "jobs")) }
     val tls by lazy { PrinterTls(this) }
     val printer by lazy { PrinterRepository(appScope, configStore, tls, NetworkMonitor(this)) }
 
     override fun onCreate() {
         super.onCreate()
+        jobs // start following the running job's file
         // Mirror printer state to the home-screen widget whenever reports flow (app open
         // or monitor running). WidgetStore skips writes the widget wouldn't show.
         appScope.launch {

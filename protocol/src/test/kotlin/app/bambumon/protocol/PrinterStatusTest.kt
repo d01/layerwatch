@@ -21,6 +21,7 @@ class PrinterStatusTest {
         assertEquals(JobState.Running, s.jobState)
         assertEquals("sample_part_wide_C1", s.jobName)
         assertEquals("1", s.taskId)
+        assertEquals(1, s.plateIndex)
         assertEquals(502, s.totalLayers)
         assertEquals(39.0, s.chamberC!!, 0.0)
         assertEquals(70.0, s.bed.target!!, 0.0)

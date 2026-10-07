@@ -73,6 +73,8 @@ data class PrinterStatus(
     val jobName: String?,
     /** The printer's per-print counter (`task_id`); null when it reports "0". */
     val taskId: String?,
+    /** Which plate of the job file is printing, from `gcode_file` (`.../plate_N.gcode`). */
+    val plateIndex: Int?,
     val percent: Int?,
     val remainingMinutes: Int?,
     val layer: Int?,
@@ -104,6 +106,7 @@ data class PrinterStatus(
             stage = p.int("stg_cur")?.let(PrintStage::fromCode),
             jobName = p.str("subtask_name")?.takeIf { it.isNotBlank() },
             taskId = p.str("task_id")?.takeIf { it.isNotBlank() && it != "0" },
+            plateIndex = p.str("gcode_file")?.let { Regex("""plate_(\d+)\.gcode""").find(it)?.groupValues?.get(1)?.toIntOrNull() },
             percent = p.int("mc_percent"),
             remainingMinutes = p.int("mc_remaining_time"),
             layer = p.int("layer_num"),

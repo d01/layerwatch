@@ -69,4 +69,14 @@ class ForecastsTest {
         assertNull(fallback.paceRatio)
         assertEquals(t0 + min + 88 * min, fallback.paceFinishMs)
     }
+
+    @Test fun matchingSpoolsCountAsBackups() {
+        // Slot 0 nearly empty; slot 1 is the same white PETG Basic; slot 2 is black.
+        fun t(slot: Int, color: String, pct: Int) = Tray(slot, "PETG", "PETG Basic", color, pct, 1000)
+        val trays = mapOf(0 to t(0, "FFFFFFFF", 0), 1 to t(1, "FFFFFFFF", 100), 2 to t(2, "000000FF", 100))
+        val n = FilamentForecast.compute(model, null, 4, listOf(0), trays).single()
+        assertEquals(listOf(1), n.backupSlots)
+        assertEquals(1000.0, n.availableG!!, 1e-9)
+        assertEquals(FilamentVerdict.Enough, n.verdict)
+    }
 }

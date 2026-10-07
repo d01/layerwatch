@@ -57,4 +57,12 @@ class PrintEventDetectorTest {
         assertTrue(detector.update(PrinterStatus.from(kotlinx.serialization.json.JsonObject(emptyMap()))).isEmpty())
         assertTrue(feed(""""gcode_state":"RUNNING"""").isEmpty())
     }
+
+    @Test fun autoRefillIsASpoolSwitch() {
+        val trays = """"ams":{"tray_now":"0","ams":[{"id":"0","tray":[{"id":"0"},{"id":"1","tray_type":"PETG","tray_sub_brands":"PETG Basic","tray_color":"FFFFFFFF","remain":100}]}]}"""
+        feed(""""gcode_state":"RUNNING","subtask_name":"vent","mapping":[0],$trays""")
+        val events = feed(""""mapping":[1],"hms":[{"attr":117448704,"code":196610}]""")
+        assertEquals(PrintEvent.SpoolSwitched("vent", fromSlot = 0, toSlot = 1, toName = "PETG Basic"), events.filterIsInstance<PrintEvent.SpoolSwitched>().single())
+        assertEquals(1, events.filterIsInstance<PrintEvent.NewHms>().size)
+    }
 }

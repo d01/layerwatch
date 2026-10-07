@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -40,6 +41,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.bambumon.R
 import app.bambumon.config.PrinterConfig
 import app.bambumon.printer.PrinterTls
+import app.bambumon.printer.printerModelName
 import app.bambumon.ui.components.AmsCard
 import app.bambumon.ui.components.AmsList
 import app.bambumon.ui.components.AmsStrip
@@ -94,6 +96,11 @@ fun DashboardScreen(
         val release = vm.acquireConnection()
         onDispose(release)
     }
+
+    // A print seen while open is handed to the background monitor (state only updates
+    // while visible, so this never fires from the background).
+    val printing = state.isLive && state.status?.jobState?.isActive == true
+    LaunchedEffect(printing) { if (printing) vm.printSeenWhileOpen() }
 
     if (fullscreen) {
         BackHandler { fullscreen = false }
@@ -235,7 +242,7 @@ private fun Header(d: Dash, showMenu: Boolean = true) {
     val t = LocalBambuType.current
     Row(Modifier.fillMaxWidth().heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(modelName(d.config.serial), style = t.title, color = Palette.text)
+            Text(printerModelName(d.config.serial), style = t.title, color = Palette.text)
             LinkChip(d.state)
         }
         if (showMenu) MoreMenu(d)
@@ -251,7 +258,12 @@ private fun MoreMenu(d: Dash) {
                 .clickable(role = Role.Button, onClickLabel = "More options") { open = true },
             contentAlignment = Alignment.Center,
         ) { Glyph(R.drawable.ic_more, Palette.text, 20.dp, description = "More options") }
+        val watching by d.vm.watchInBackground.collectAsStateWithLifecycle()
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text(if (watching) "Background watching: on" else "Background watching: off") },
+                onClick = { open = false; d.vm.setWatchInBackground(!watching) },
+            )
             DropdownMenuItem(text = { Text("Change access code") }, onClick = { open = false; d.onUpdateCode() })
             DropdownMenuItem(text = { Text("Forget printer") }, onClick = { open = false; d.onForget() })
         }
@@ -292,16 +304,3 @@ private fun Controls(
 
 /** Old data stays readable but visibly not-live. */
 private fun Modifier.dimWhenStale(live: Boolean) = if (live) this else this.alpha(0.55f)
-
-/** Bambu serial prefixes → model names; unknown prefixes fall back to "Printer". */
-private fun modelName(serial: String): String = when (serial.take(3)) {
-    "00M" -> "X1 Carbon"
-    "00W" -> "X1"
-    "03W" -> "X1E"
-    "01S" -> "P1P"
-    "01P" -> "P1S"
-    "030" -> "A1 mini"
-    "039" -> "A1"
-    "094" -> "H2D"
-    else -> "Printer"
-}

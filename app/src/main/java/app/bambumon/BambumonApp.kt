@@ -1,6 +1,7 @@
 package app.bambumon
 
 import android.app.Application
+import app.bambumon.config.AppSettings
 import app.bambumon.config.PrinterConfigStore
 import app.bambumon.printer.NetworkMonitor
 import app.bambumon.printer.PrinterRepository
@@ -13,6 +14,7 @@ class BambumonApp : Application() {
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val configStore by lazy { PrinterConfigStore(this) }
+    val settings by lazy { AppSettings(this) }
     val tls by lazy { PrinterTls(this) }
     val printer by lazy { PrinterRepository(appScope, configStore, tls, NetworkMonitor(this)) }
 }

@@ -28,8 +28,8 @@ import app.bambumon.ui.theme.Palette
 class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels()
 
-    private val localNetworkPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* screens retry on their own */ }
+    private val permissions =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { /* screens retry on their own */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,7 +37,7 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
-        requestLocalNetworkAccess()
+        requestPermissions()
         setContent {
             BambumonTheme {
                 val screen by vm.screen.collectAsStateWithLifecycle()
@@ -59,11 +59,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Android 17 gates connections to private-range addresses behind a runtime permission. */
-    private fun requestLocalNetworkAccess() {
-        if (Build.VERSION.SDK_INT < 37) return
-        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_LOCAL_NETWORK) ==
-            PackageManager.PERMISSION_GRANTED
-        if (!granted) localNetworkPermission.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
+    /**
+     * Android 17 gates connections to private-range addresses behind a runtime permission;
+     * notifications need one too.
+     */
+    private fun requestPermissions() {
+        val wanted = buildList {
+            if (Build.VERSION.SDK_INT >= 37) add(Manifest.permission.ACCESS_LOCAL_NETWORK)
+            add(Manifest.permission.POST_NOTIFICATIONS)
+        }.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
+        if (wanted.isNotEmpty()) permissions.launch(wanted.toTypedArray())
     }
 }

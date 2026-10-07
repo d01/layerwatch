@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status-bar glyph: printer frame with a nozzle over a part. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M5,3h14a2,2 0,0 1,2 2v14a2,2 0,0 1,-2 2H5a2,2 0,0 1,-2 -2V5a2,2 0,0 1,2 -2z"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2" />
+    <path
+        android:pathData="M10,6h4v3l-2,2l-2,-2z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M8,14h8v4H8z"
+        android:fillColor="#FFFFFFFF" />
+</vector>

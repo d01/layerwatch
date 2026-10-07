@@ -87,7 +87,10 @@ class PrinterRepository(
         }
     }
 
-    /** Hold the connection open until the returned handle is released. */
+    /**
+     * Hold the connection open until the returned handle is released. After the last
+     * release it lingers briefly so a fold, rotation or quick app switch is seamless.
+     */
     @Synchronized
     fun acquire(): () -> Unit {
         demand++

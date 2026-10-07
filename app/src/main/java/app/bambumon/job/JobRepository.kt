@@ -97,6 +97,13 @@ class JobRepository(
         }
     }.getOrDefault(emptyList())
 
+    /** A previously downloaded job, for viewing details from history. Null if not cached. */
+    suspend fun readCached(name: String, plate: Int = 1): JobFile? = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        cached(JobKey(name, plate))?.let { f -> runCatching { JobArchive.read(f, plate) }.getOrNull() }
+    }
+
+    fun isCached(name: String, plate: Int = 1): Boolean = cached(JobKey(name, plate)) != null
+
     /** Try again after a failure (e.g. the printer was unreachable). */
     fun retry() {
         (state.value as? JobLoad.Unavailable)?.key?.let(::load)

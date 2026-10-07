@@ -40,6 +40,9 @@ class PrinterStatusTest {
         assertEquals("PETG", unit.trays[0].material)
         assertEquals("PETG Translucent", unit.trays[3].name)
         assertEquals(41, unit.trays[0].remainingPercent)
+        assertEquals(1000, unit.trays[0].spoolWeightG)
+        assertEquals(410.0, unit.trays[0].remainingG!!, 1e-9)
+        assertEquals(listOf(0), s.amsMapping)
         assertEquals(2, unit.humidityLevel)
         assertEquals(0, s.activeSlot)
     }

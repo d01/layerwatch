@@ -23,6 +23,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +54,11 @@ import java.time.format.FormatStyle
 @Composable
 fun HistoryScreen(records: List<PrintRecord>, history: PrintHistory, onBack: () -> Unit) {
     val t = LocalBambuType.current
+    var open by rememberSaveable { mutableStateOf<String?>(null) }
+    records.firstOrNull { it.key == open }?.let { r ->
+        HistoryEntryScreen(r, onBack = { open = null })
+        return
+    }
     BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize().background(Palette.ground).safeDrawingPadding()) {
         Row(
@@ -76,7 +84,11 @@ fun HistoryScreen(records: List<PrintRecord>, history: PrintHistory, onBack: () 
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.fillMaxWidth().widthIn(max = 720.dp).align(Alignment.CenterHorizontally),
         ) {
-            items(records, key = { it.key }) { HistoryRow(it, history) }
+            items(records, key = { it.key }) { r ->
+                Box(Modifier.clip(RoundedCornerShape(18.dp)).clickable(role = Role.Button, onClickLabel = "Open ${r.jobName ?: "print"}") { open = r.key }) {
+                    HistoryRow(r, history)
+                }
+            }
         }
     }
 }

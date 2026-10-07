@@ -15,6 +15,7 @@ import app.bambumon.protocol.JobState
 import app.bambumon.protocol.LinkState
 import app.bambumon.protocol.PrintEvent
 import app.bambumon.protocol.PrinterStatus
+import app.bambumon.protocol.job.ProgressMarkers
 import app.bambumon.ui.components.Format
 
 /**
@@ -56,6 +57,8 @@ class MonitorNotifications(private val context: Context) {
         lastReportAtMs: Long?,
         lightOn: Boolean?,
         nowMs: Long,
+        markers: ProgressMarkers? = null,
+        toolColor: (Int) -> Int? = { null },
     ): Notification {
         val active = status?.jobState?.isActive == true
         if (!active) {
@@ -102,10 +105,22 @@ class MonitorNotifications(private val context: Context) {
             )
         }
         if (Build.VERSION.SDK_INT >= 36) {
+            // Segments coloured by the filament loaded for each stretch; points at the first
+            // layer and each filament change. Single-filament jobs stay one amber bar.
+            val multi = (markers?.segments?.size ?: 0) > 1
+            val segments = markers?.segments?.takeIf { multi }?.map {
+                Notification.ProgressStyle.Segment((it.toPct - it.fromPct).coerceAtLeast(1)).setColor(toolColor(it.tool) ?: AMBER)
+            } ?: listOf(Notification.ProgressStyle.Segment(100).setColor(AMBER))
+            val points = markers?.points.orEmpty().map {
+                Notification.ProgressStyle.Point(it.pct.coerceIn(1, 99)).setColor(
+                    if (it.kind == ProgressMarkers.Kind.FirstLayerDone) BLUE else (it.toTool?.let(toolColor) ?: MUTED)
+                )
+            }
             b.setStyle(
                 Notification.ProgressStyle()
                     .setStyledByProgress(true)
-                    .setProgressSegments(listOf(Notification.ProgressStyle.Segment(100).setColor(AMBER)))
+                    .setProgressSegments(segments)
+                    .setProgressPoints(points)
                     .setProgress(pct)
             )
             b.setShortCriticalText("$pct%")
@@ -177,6 +192,24 @@ class MonitorNotifications(private val context: Context) {
         return true
     }
 
+    /** Heads-up shortly before an AMS filament change. */
+    fun filamentChangeSoon(model: String, minutes: Int, layer: Int, what: String, detail: String?) {
+        val text = "Switching to $what at layer $layer" + (detail?.let { " · $it" } ?: "")
+        nm.notify(
+            ID_FILAMENT,
+            Notification.Builder(context, CH_ALERTS)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(if (minutes <= 0) "Filament change now" else "Filament change in ~$minutes min")
+                .setContentText(text)
+                .setStyle(Notification.BigTextStyle().bigText("$text on $model."))
+                .setContentIntent(openApp())
+                .setAutoCancel(true)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
+                .setCategory(Notification.CATEGORY_REMINDER)
+                .build(),
+        )
+    }
+
     fun lostContact(model: String, sinceMs: Long) {
         nm.notify(
             ID_LOST,
@@ -207,6 +240,7 @@ class MonitorNotifications(private val context: Context) {
         private const val ID_PAUSED = 12
         private const val ID_HMS = 13
         private const val ID_FIRST_LAYER = 14
+        private const val ID_FILAMENT = 15
 
         private const val CH_PROGRESS = "progress"
         private const val CH_WATCHING = "watching"
@@ -214,5 +248,7 @@ class MonitorNotifications(private val context: Context) {
         private const val CH_CONNECTION = "connection"
 
         private const val AMBER = 0xFFF4B04A.toInt()
+        private const val BLUE = 0xFF8AB8FF.toInt()
+        private const val MUTED = 0xFFA2AAB2.toInt()
     }
 }

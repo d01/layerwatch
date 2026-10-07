@@ -11,7 +11,12 @@ import app.bambumon.printer.printerModelName
 import app.bambumon.camera.Snapshot
 import app.bambumon.history.Outcome
 import app.bambumon.history.PrintHistory
+import app.bambumon.job.JobLoad
 import app.bambumon.protocol.JobState
+import app.bambumon.protocol.PrinterStatus
+import app.bambumon.protocol.job.FilamentForecast
+import app.bambumon.protocol.job.JobFile
+import app.bambumon.protocol.job.ProgressMarkers
 import app.bambumon.protocol.PrintEvent
 import app.bambumon.protocol.LinkState
 import app.bambumon.protocol.PrintEventDetector
@@ -92,6 +97,9 @@ class PrintMonitorService : Service() {
             if (s.jobState.isActive && key == null) {
                 key = PrintHistory.keyFor(s.taskId, s.jobName, System.currentTimeMillis())
                 history.begin(key!!, s.jobName, s.totalLayers, System.currentTimeMillis())
+                // Note which timelapses already exist, so the one this print adds can be found.
+                val k = key!!
+                scope.launch { app.timelapses.snapshotBefore(k) }
             }
             detector.update(s).forEach { e ->
                 Log.i(TAG, "event: $e")
@@ -147,12 +155,49 @@ class PrintMonitorService : Service() {
 
     /** Refresh the foreground notification on change, at most every [NOTIFY_MIN_MS]. */
     private suspend fun updateOngoing() {
-        combine(repo.status, repo.link, repo.lastReportAtMs, ::Triple).collectLatest { (s, link, last) ->
-            if (s?.jobState?.isActive == false) return@collectLatest // stopping; don't repost
-            notes.postOngoing(notes.ongoing(model(), s, link, last, s?.chamberLightOn, System.currentTimeMillis()))
-            delay(NOTIFY_MIN_MS)
-        }
+        combine(repo.status, repo.link, repo.lastReportAtMs, app.jobs.state) { s, link, last, load -> Quad(s, link, last, load) }
+            .collectLatest { (s, link, last, load) ->
+                if (s?.jobState?.isActive == false) return@collectLatest // stopping; don't repost
+                val job = (load as? JobLoad.Ready)?.job
+                val markers = job?.gcode?.let(ProgressMarkers::from)
+                notes.postOngoing(
+                    notes.ongoing(
+                        model(), s, link, last, s?.chamberLightOn, System.currentTimeMillis(),
+                        markers = markers, toolColor = { tool -> filamentColor(job, s, tool) },
+                    )
+                )
+                if (s != null && job?.gcode != null) warnFilamentChange(s, job)
+                delay(NOTIFY_MIN_MS)
+            }
     }
+
+    private val warnedChanges = mutableSetOf<Int>()
+
+    /** Heads-up ~[CHANGE_WARN_MIN] minutes before each AMS filament change, once per change. */
+    private fun warnFilamentChange(s: PrinterStatus, job: JobFile) {
+        val model = job.gcode ?: return
+        val (change, minutes) = ProgressMarkers.minutesToNextChange(model, s.layer ?: return) ?: return
+        if (minutes > CHANGE_WARN_MIN || !warnedChanges.add(change.layer)) return
+        val filament = job.slice?.filaments?.firstOrNull { it.id == change.toTool + 1 }
+        val trays = s.ams.flatMap { it.trays }.associateBy { it.slot }
+        val need = FilamentForecast.compute(model, job.settings, s.layer ?: 0, s.amsMapping, trays).firstOrNull { it.tool == change.toTool }
+        val tray = need?.amsSlot?.let { trays[it] }
+        val what = listOfNotNull(tray?.name ?: filament?.type, need?.amsSlot?.let { "slot ${it % 4 + 1}" }).joinToString(" · ").ifBlank { "filament ${change.toTool + 1}" }
+        val detail = need?.let { n -> "%.0f g needed".format(n.neededG) + (n.availableG?.let { ", ~%.0f g on spool".format(it) } ?: "") }
+        notes.filamentChangeSoon(model(), minutes, change.layer, what, detail)
+    }
+
+    /** ARGB for a slicer filament slot: the slicer's colour, else the mapped AMS spool's. */
+    private fun filamentColor(job: JobFile?, s: PrinterStatus?, tool: Int): Int? {
+        val hex = job?.slice?.filaments?.firstOrNull { it.id == tool + 1 }?.colorHex?.removePrefix("#")
+            ?: s?.let { st ->
+                val usedTools = job?.gcode?.layers?.flatMap { it.extrudedMmByTool.keys }?.toSortedSet()?.toList().orEmpty()
+                FilamentForecast.amsSlot(tool, usedTools, st.amsMapping)?.let { slot -> st.ams.flatMap { it.trays }.firstOrNull { it.slot == slot }?.colorHex }
+            }
+        return hex?.take(6)?.toLongOrNull(16)?.let { (0xFF000000 or it).toInt() }
+    }
+
+    private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 
     /** A fresh chamber frame for the home-screen widget every [WIDGET_FRAME_MS] (~0.5 MB each). */
     private suspend fun refreshWidgetFrame() {
@@ -179,6 +224,7 @@ class PrintMonitorService : Service() {
         private const val NOTIFY_MIN_MS = 2_000L
         private const val SNAPSHOT_GRACE_MS = 15_000L
         private const val WIDGET_FRAME_MS = 10 * 60_000L
+        private const val CHANGE_WARN_MIN = 2
 
         /** Only legal while the app is visible, which is the only time it's called. */
         fun start(context: Context) {

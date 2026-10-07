@@ -48,6 +48,7 @@ data class DashboardState(
 
 class DashboardViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = (app as BambumonApp).printer
+    val history = (app as BambumonApp).history
     private val pendingLight = MutableStateFlow<Pair<Boolean, Long>?>(null)
     private val speedUnlockedUntil = MutableStateFlow(0L)
 

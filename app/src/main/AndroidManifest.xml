@@ -40,5 +40,17 @@
         <receiver
             android:name=".monitor.MonitorActionReceiver"
             android:exported="false" />
+
+        <receiver
+            android:name=".widget.PrinterWidgetReceiver"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/printer_widget_info" />
+        </receiver>
     </application>
 </manifest>

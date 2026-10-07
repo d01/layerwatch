@@ -15,7 +15,7 @@
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
 
     <application
-        android:name=".BambumonApp"
+        android:name=".LayerwatchApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"

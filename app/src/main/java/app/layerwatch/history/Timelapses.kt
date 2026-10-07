@@ -6,8 +6,18 @@ import app.layerwatch.printer.PrinterTls
 import app.layerwatch.protocol.ftps.FtpsClient
 import app.layerwatch.protocol.ftps.RemoteFile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.io.File
+
+/** Where a timelapse download stands, app-wide (it outlives the screen that started it). */
+sealed interface Download {
+    data class Running(val bytes: Long, val total: Long) : Download
+    data class Done(val file: File) : Download
+    data class Failed(val message: String) : Download
+}
 
 /** A print's timelapse on the printer, and how sure we are it's that print's. */
 data class TimelapseRef(val name: String, val size: Long, val certain: Boolean) {
@@ -30,6 +40,16 @@ class Timelapses(
     private val historyDir: File,
     private val cacheDir: File,
 ) {
+    private val _downloads = MutableStateFlow<Map<String, Download>>(emptyMap())
+    /** By timelapse file name. Absent = not started (or cached from an earlier run: see [cachedFile]). */
+    val downloads: StateFlow<Map<String, Download>> = _downloads.asStateFlow()
+
+    fun cachedFile(ref: TimelapseRef): File? = File(cacheDir, ref.name).takeIf { it.exists() && it.length() == ref.size }
+
+    internal fun report(name: String, d: Download) {
+        _downloads.value = _downloads.value + (name to d)
+    }
+
     private fun beforeFile(key: String) = File(historyDir, "timelapse-before-" + key.filter { it.isLetterOrDigit() || it == '-' }.take(60))
 
     /** Record the timelapse files that exist as [key] starts. Idempotent. */
@@ -61,12 +81,22 @@ class Timelapses(
         runCatching { download(ref.thumbnailPath, out) {} ; out }.getOrNull()
     }
 
-    /** Downloads the video once into the cache (reported via [onProgress]); returns the file. */
-    suspend fun video(ref: TimelapseRef, onProgress: (Long) -> Unit): File = withContext(Dispatchers.IO) {
+    /**
+     * Downloads the video into the cache, resuming a partial file from an earlier attempt.
+     * Runs inside [TimelapseDownloadJob] so it survives the user leaving the app.
+     */
+    suspend fun download(ref: TimelapseRef, onProgress: (Long) -> Unit): File = withContext(Dispatchers.IO) {
+        cachedFile(ref)?.let { return@withContext it }
+        cacheDir.mkdirs()
         val out = File(cacheDir, ref.name)
-        if (out.exists() && out.length() == ref.size) return@withContext out
-        download(ref.path, out, onProgress)
-        check(out.length() == ref.size) { "Download incomplete" }
+        val part = File(cacheDir, ref.name + ".part")
+        if (part.length() > ref.size) part.delete()
+        val offset = part.length()
+        client().use { ftp ->
+            java.io.FileOutputStream(part, /* append = */ true).buffered().use { ftp.retrieve(ref.path, it, offset, onProgress) }
+        }
+        check(part.length() == ref.size) { "Download incomplete (${part.length()} of ${ref.size} bytes)" }
+        part.renameTo(out)
         prune()
         out
     }
@@ -76,7 +106,7 @@ class Timelapses(
     private fun download(path: String, out: File, onProgress: (Long) -> Unit) {
         cacheDir.mkdirs()
         val part = File(out.parentFile, out.name + ".part")
-        client().use { ftp -> part.outputStream().buffered().use { ftp.retrieve(path, it, onProgress) } }
+        client().use { ftp -> part.outputStream().buffered().use { ftp.retrieve(path, it, onProgress = onProgress) } }
         part.renameTo(out)
     }
 

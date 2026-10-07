@@ -91,6 +91,21 @@ class PrintHistory(private val dir: File) {
         edit { list -> list.map { if (it.key == key) it.copy(snapshotFile = name) else it } }
     }
 
+    /**
+     * Closes records left "in progress" whose print is no longer running, e.g. because the
+     * monitor wasn't alive when it ended. [activeKey] is the job the printer is running now
+     * (null if none); [reportedKey]/[reportedOutcome] what it says about its last job.
+     */
+    suspend fun reconcile(activeKey: String?, reportedKey: String?, reportedOutcome: Outcome?, nowMs: Long) = edit { list ->
+        list.map { r ->
+            if (r.outcome != Outcome.InProgress || r.key == activeKey) r
+            else r.copy(
+                outcome = if (r.key == reportedKey && reportedOutcome != null) reportedOutcome else Outcome.Unknown,
+                endedAtMs = nowMs,
+            )
+        }
+    }
+
     fun snapshot(record: PrintRecord): File? = record.snapshotFile?.let { File(dir, it) }?.takeIf { it.exists() }
 
     suspend fun delete(key: String) = edit { list ->

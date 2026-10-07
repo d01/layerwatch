@@ -3,7 +3,9 @@ package app.layerwatch
 import android.app.Application
 import app.layerwatch.config.AppSettings
 import app.layerwatch.config.PrinterConfigStore
+import app.layerwatch.history.Outcome
 import app.layerwatch.history.PrintHistory
+import app.layerwatch.protocol.JobState
 import app.layerwatch.history.Timelapses
 import app.layerwatch.job.JobRepository
 import app.layerwatch.printer.NetworkMonitor
@@ -32,6 +34,19 @@ class LayerwatchApp : Application() {
     override fun onCreate() {
         super.onCreate()
         jobs // start following the running job's file
+        // Close history entries whose print ended while nothing was watching.
+        appScope.launch {
+            printer.status.collect { s ->
+                if (s == null || s.jobState == JobState.Unknown) return@collect
+                val key = PrintHistory.keyFor(s.taskId, s.jobName, 0)
+                val outcome = when (s.jobState) {
+                    JobState.Finished -> Outcome.Finished
+                    JobState.Failed -> Outcome.Failed
+                    else -> null
+                }
+                history.reconcile(activeKey = key.takeIf { s.jobState.isActive }, reportedKey = key, reportedOutcome = outcome, nowMs = System.currentTimeMillis())
+            }
+        }
         // Mirror printer state to the home-screen widget whenever reports flow (app open
         // or monitor running). WidgetStore skips writes the widget wouldn't show.
         appScope.launch {

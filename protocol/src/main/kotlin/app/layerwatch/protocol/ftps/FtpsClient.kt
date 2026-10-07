@@ -53,11 +53,14 @@ class FtpsClient private constructor(
 
     fun size(path: String): Long? = runCatching { command("SIZE $path", 213).substringAfter(' ').trim().toLong() }.getOrNull()
 
-    /** Streams [path] into [out]; returns bytes copied. [onProgress] gets running totals. */
-    fun retrieve(path: String, out: OutputStream, onProgress: (Long) -> Unit = {}): Long =
-        dataCommand("RETR $path") { input ->
+    /**
+     * Streams [path] into [out]; returns bytes copied. [onProgress] gets running totals
+     * (including [offset]). A non-zero [offset] resumes a partial download via REST.
+     */
+    fun retrieve(path: String, out: OutputStream, offset: Long = 0, onProgress: (Long) -> Unit = {}): Long =
+        dataCommand("RETR $path", restAt = offset) { input ->
             val buf = ByteArray(64 * 1024)
-            var total = 0L
+            var total = offset
             while (true) {
                 val n = input.read(buf)
                 if (n < 0) break
@@ -73,8 +76,9 @@ class FtpsClient private constructor(
         runCatching { control.close() }
     }
 
-    private fun <T> dataCommand(cmd: String, consume: (InputStream) -> T): T {
+    private fun <T> dataCommand(cmd: String, restAt: Long = 0, consume: (InputStream) -> T): T {
         val (dataHost, dataPort) = passive()
+        if (restAt > 0) command("REST $restAt", 350)
         trace("data: connecting to $dataHost:$dataPort for '$cmd'")
         val raw = ControlPortSocket(port).apply {
             soTimeout = timeoutMs

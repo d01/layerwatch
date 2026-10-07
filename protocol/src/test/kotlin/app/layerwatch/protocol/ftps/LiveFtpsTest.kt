@@ -38,6 +38,11 @@ class LiveFtpsTest {
             println("LIVE: downloaded ${smallest.name} ($n bytes)")
             assertEquals(smallest.size, n)
             assertEquals(smallest.size, ftp.size("/${smallest.name}"))
+            // Resume from the middle: the tail must match the full download's tail.
+            val half = smallest.size / 2
+            val tail = ByteArrayOutputStream()
+            assertEquals(smallest.size, ftp.retrieve("/${smallest.name}", tail, offset = half))
+            assertTrue(tail.toByteArray().contentEquals(out.toByteArray().copyOfRange(half.toInt(), smallest.size.toInt())))
             // Second transfer on the same session, as the app will do.
             assertTrue(ftp.list("/timelapse").isNotEmpty())
         }

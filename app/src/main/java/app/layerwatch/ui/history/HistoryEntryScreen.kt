@@ -52,7 +52,11 @@ import app.layerwatch.LayerwatchApp
 import app.layerwatch.R
 import app.layerwatch.history.Outcome
 import app.layerwatch.history.PrintRecord
+import app.layerwatch.history.Download
+import app.layerwatch.history.TimelapseDownloadJob
 import app.layerwatch.history.TimelapseRef
+import app.layerwatch.history.saveToMovies
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.layerwatch.ui.components.Bar
 import app.layerwatch.ui.components.DetailsLink
 import app.layerwatch.ui.details.ArchivedDetailsScreen
@@ -72,8 +76,6 @@ private sealed interface Lapse {
     data object Searching : Lapse
     data class None(val why: String) : Lapse
     data class Found(val ref: TimelapseRef, val thumb: ImageBitmap?) : Lapse
-    data class Downloading(val ref: TimelapseRef, val bytes: Long) : Lapse
-    data class Ready(val ref: TimelapseRef, val file: File) : Lapse
 }
 
 /** One print: its timelapse from the printer (play / save), final snapshot and summary. */
@@ -112,18 +114,25 @@ fun HistoryEntryScreen(record: PrintRecord, onBack: () -> Unit) {
         )
     }
 
-    fun fetch(then: (File) -> Unit) {
-        val ref = when (val l = lapse) {
-            is Lapse.Found -> l.ref
-            is Lapse.Ready -> return then(l.file)
-            else -> return
-        }
-        scope.launch {
-            runCatching {
-                app.timelapses.video(ref) { n -> lapse = Lapse.Downloading(ref, n) }
-            }.onSuccess { f -> lapse = Lapse.Ready(ref, f); then(f) }
-                .onFailure { lapse = Lapse.None("Download failed: ${it.message}") }
-        }
+    // Downloads live in the app (a user-initiated job), not this screen: leaving doesn't stop them.
+    val downloads by app.timelapses.downloads.collectAsStateWithLifecycle()
+    var wantPlay by remember { mutableStateOf(false) }
+    val found = lapse as? Lapse.Found
+    val cached = found?.ref?.let { app.timelapses.cachedFile(it) }
+    val dl: Download? = found?.let { downloads[it.ref.name] } ?: cached?.let { Download.Done(it) }
+    val ready = (dl as? Download.Done)?.file
+    LaunchedEffect(ready, wantPlay) { if (ready != null && wantPlay) playing = true }
+
+    fun play() {
+        val ref = found?.ref ?: return
+        wantPlay = true
+        if (ready == null && dl !is Download.Running) TimelapseDownloadJob.start(context, ref, saveWhenDone = false)
+    }
+
+    fun save() {
+        val ref = found?.ref ?: return
+        if (ready != null) scope.launch { saved = if (withContext(Dispatchers.IO) { saveToMovies(context, ready) }) "Saved to Movies" else "Save failed" }
+        else { TimelapseDownloadJob.start(context, ref, saveWhenDone = true); saved = "Saving when downloaded" }
     }
 
     Column(
@@ -145,16 +154,15 @@ fun HistoryEntryScreen(record: PrintRecord, onBack: () -> Unit) {
 
         Column(Modifier.widthIn(max = 720.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.fillMaxWidth().aspectRatio(1168f / 720f).clip(RoundedCornerShape(20.dp)).background(androidx.compose.ui.graphics.Color.Black)) {
-                val l = lapse
-                if (playing && l is Lapse.Ready) {
-                    VideoPlayer(l.file)
+                if (playing && ready != null) {
+                    VideoPlayer(ready)
                 } else {
-                    val poster = (l as? Lapse.Found)?.thumb ?: snapshot
+                    val poster = found?.thumb ?: snapshot
                     poster?.let { Image(it, "Final snapshot", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
-                    if (l is Lapse.Found || l is Lapse.Ready) {
+                    if (found != null) {
                         Box(
                             Modifier.align(Alignment.Center).size(64.dp).clip(CircleShape).background(Palette.ground.copy(alpha = 0.72f))
-                                .clickable(role = Role.Button, onClickLabel = "Play timelapse") { fetch { playing = true } },
+                                .clickable(role = Role.Button, onClickLabel = "Play timelapse") { play() },
                             contentAlignment = Alignment.Center,
                         ) { Glyph(R.drawable.ic_play, Palette.text, 24.dp) }
                     }
@@ -163,20 +171,29 @@ fun HistoryEntryScreen(record: PrintRecord, onBack: () -> Unit) {
             when (val l = lapse) {
                 Lapse.Searching -> Text("Looking for the timelapse on the printer…", style = t.caption, color = Palette.muted)
                 is Lapse.None -> Text(l.why, style = t.caption, color = Palette.muted)
-                is Lapse.Downloading -> {
-                    Bar((l.bytes.toFloat() / l.ref.size).coerceIn(0f, 1f), Palette.amber, height = 6.dp)
-                    Text("Downloading %.1f of %.1f MB · once, then plays offline".format(l.bytes / 1e6, l.ref.size / 1e6), style = t.caption, color = Palette.muted)
-                }
-                is Lapse.Found, is Lapse.Ready -> {
-                    val ref = (l as? Lapse.Found)?.ref ?: (l as Lapse.Ready).ref
+                is Lapse.Found -> {
+                    when (dl) {
+                        is Download.Running -> {
+                            Bar((dl.bytes.toFloat() / dl.total.coerceAtLeast(1)).coerceIn(0f, 1f), Palette.amber, height = 6.dp)
+                            Text(
+                                "Downloading %.1f of %.1f MB · keeps going if you leave".format(dl.bytes / 1e6, dl.total / 1e6),
+                                style = t.caption, color = Palette.muted,
+                            )
+                        }
+                        is Download.Failed -> {
+                            Text("Download stopped: ${dl.message}", style = t.caption, color = Palette.errorText)
+                            ControlButton("Retry download", ControlStyle.Secondary, { play() }, Modifier.fillMaxWidth(), minHeight = 44.dp) {}
+                        }
+                        else -> Unit
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ControlButton("Play timelapse", ControlStyle.Primary, { fetch { playing = true } }, Modifier.weight(1f), minHeight = 48.dp) {}
-                        ControlButton(saved ?: "Save to phone", ControlStyle.Secondary, {
-                            fetch { f -> scope.launch { saved = if (saveToMovies(context, f)) "Saved to Movies" else "Save failed" } }
-                        }, Modifier.weight(1f), minHeight = 48.dp, enabled = saved == null) {}
+                        ControlButton("Play timelapse", ControlStyle.Primary, { play() }, Modifier.weight(1f), minHeight = 48.dp) {}
+                        ControlButton(saved ?: "Save to phone", ControlStyle.Secondary, { save() }, Modifier.weight(1f), minHeight = 48.dp, enabled = saved == null) {}
                     }
                     Text(
-                        "%.1f MB on the printer".format(ref.size / 1e6) + if (ref.certain) "" else " · latest timelapse; this print's file couldn't be confirmed",
+                        "%.1f MB on the printer".format(l.ref.size / 1e6) +
+                            (if (ready != null) " · downloaded" else "") +
+                            if (l.ref.certain) "" else " · latest timelapse; this print's file couldn't be confirmed",
                         style = t.caption, color = Palette.faint,
                     )
                 }
@@ -228,23 +245,4 @@ private fun outcomeLabel(o: Outcome) = when (o) {
     Outcome.Failed -> "Failed" to Palette.danger
     Outcome.InProgress -> "In progress" to Palette.amber
     Outcome.Unknown -> "Ended" to Palette.muted
-}
-
-/** Copies a downloaded timelapse into Movies/Layerwatch (no storage permission needed). */
-private suspend fun saveToMovies(context: Context, file: File): Boolean = withContext(Dispatchers.IO) {
-    runCatching {
-        val resolver = context.contentResolver
-        val values = ContentValues().apply {
-            put(MediaStore.Video.Media.DISPLAY_NAME, file.name)
-            put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Layerwatch")
-            put(MediaStore.Video.Media.IS_PENDING, 1)
-        }
-        val uri = checkNotNull(resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values))
-        resolver.openOutputStream(uri)!!.use { out -> file.inputStream().use { it.copyTo(out) } }
-        values.clear()
-        values.put(MediaStore.Video.Media.IS_PENDING, 0)
-        resolver.update(uri, values, null, null)
-        true
-    }.getOrDefault(false)
 }

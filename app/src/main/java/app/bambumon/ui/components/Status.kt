@@ -253,3 +253,39 @@ fun SpeedPicker(current: SpeedLevel?, enabled: Boolean, onPick: (SpeedLevel) -> 
         }
     }
 }
+
+/**
+ * Speed picker guarded by a 4 s hold above it. Locked, the picker still shows the
+ * current speed but doesn't respond; unlocked, it takes one change within the window.
+ */
+@Composable
+fun SpeedControl(
+    state: DashboardState,
+    onUnlock: () -> Unit,
+    onPick: (SpeedLevel) -> Unit,
+    modifier: Modifier = Modifier,
+    showUnlock: Boolean = true,
+) {
+    val t = LocalBambuType.current
+    val available = state.isLive && state.jobControlEnabled
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (showUnlock) {
+            if (state.speedUnlocked) {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(14.dp))
+                        .background(Palette.amberSoft).padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Glyph(R.drawable.ic_gauge, Palette.amberText, 16.dp)
+                    Text("Speed unlocked · choose within ${state.speedUnlockSec} s", style = t.label, color = Palette.amberText)
+                }
+            } else {
+                HoldToConfirmButton(
+                    "Unlock speed", ControlStyle.Secondary, onUnlock, Modifier.fillMaxWidth(),
+                    enabled = available, minHeight = 48.dp,
+                ) { Glyph(R.drawable.ic_lock, Palette.text, 16.dp) }
+            }
+        }
+        SpeedPicker(state.status?.speed, available && state.speedUnlocked, onPick)
+    }
+}

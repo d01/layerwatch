@@ -40,13 +40,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.bambumon.R
 import app.bambumon.config.PrinterConfig
 import app.bambumon.printer.PrinterTls
-import app.bambumon.protocol.SpeedLevel
 import app.bambumon.ui.components.AmsCard
 import app.bambumon.ui.components.AmsList
 import app.bambumon.ui.components.AmsStrip
 import app.bambumon.ui.components.CameraAspect
 import app.bambumon.ui.components.CameraPanel
-import app.bambumon.ui.components.ControlButton
 import app.bambumon.ui.components.ControlRow
 import app.bambumon.ui.components.ControlStyle
 import app.bambumon.ui.components.FanGrid
@@ -57,7 +55,8 @@ import app.bambumon.ui.components.JobCard
 import app.bambumon.ui.components.LinkChip
 import app.bambumon.ui.components.Panel
 import app.bambumon.ui.components.PrinterAlertCard
-import app.bambumon.ui.components.SpeedPicker
+import app.bambumon.ui.components.SpeedControl
+import app.bambumon.ui.components.HoldToConfirmButton
 import app.bambumon.ui.components.TempList
 import app.bambumon.ui.components.TempStrip
 import app.bambumon.ui.components.TempTiles
@@ -136,7 +135,7 @@ private fun FoldedLayout(d: Dash) {
             AmsCard(s, Modifier.fillMaxWidth())
             Panel(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 FanGrid(s)
-                SpeedPicker(s?.speed, d.live && d.state.jobControlEnabled, d.vm::setSpeed)
+                SpeedControl(d.state, d.vm::unlockSpeed, d.vm::setSpeed)
             }
             WifiNote(s, Modifier.padding(horizontal = 4.dp))
         }
@@ -173,7 +172,7 @@ private fun UnfoldedLayout(d: Dash) {
             AmsList(s, Modifier.fillMaxWidth())
             Panel(Modifier.fillMaxWidth(), padding = 16.dp, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 FanGrid(s, compact = true)
-                SpeedPicker(s?.speed, d.live && d.state.jobControlEnabled, d.vm::setSpeed)
+                SpeedControl(d.state, d.vm::unlockSpeed, d.vm::setSpeed)
                 WifiNote(s)
             }
         }
@@ -219,6 +218,10 @@ private fun TabletopLayout(d: Dash) {
             HealthBanner(d.state, d.vm::retryNow, d.onUpdateCode)
             if (needsAttention(s)) PrinterAlertCard(s!!, d.state.jobControlEnabled, d.vm::resume, d.vm::stopPrint)
             Controls(d, Modifier.fillMaxWidth(), minHeight = 76.dp, stacked = true, withSpeed = true)
+            if (d.state.speedUnlocked) {
+                Text("Speed unlocked · choose within ${d.state.speedUnlockSec} s", style = t.label, color = Palette.amberText)
+                SpeedControl(d.state, d.vm::unlockSpeed, d.vm::setSpeed, showUnlock = false)
+            }
             TempStrip(s, d.live, Modifier.fillMaxWidth().dimWhenStale(d.live))
             AmsStrip(s, Modifier.fillMaxWidth().dimWhenStale(d.live))
         }
@@ -275,19 +278,17 @@ private fun Controls(
         stacked = stacked,
         leading = if (!withSpeed) null else {
             {
-                ControlButton(
+                HoldToConfirmButton(
                     speed?.label ?: "Speed", ControlStyle.Secondary,
-                    onClick = { d.vm.setSpeed(nextSpeed(speed)) },
+                    onConfirm = d.vm::unlockSpeed,
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = d.live && d.state.jobControlEnabled, minHeight = minHeight, stacked = stacked,
+                    enabled = d.live && d.state.jobControlEnabled && !d.state.speedUnlocked,
+                    minHeight = minHeight, stacked = stacked,
                 ) { Glyph(R.drawable.ic_gauge, Palette.text, 22.dp) }
             }
         },
     )
 }
-
-private fun nextSpeed(cur: SpeedLevel?): SpeedLevel =
-    SpeedLevel.entries[((cur?.ordinal ?: 0) + 1) % SpeedLevel.entries.size]
 
 /** Old data stays readable but visibly not-live. */
 private fun Modifier.dimWhenStale(live: Boolean) = if (live) this else this.alpha(0.55f)

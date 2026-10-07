@@ -64,6 +64,7 @@ import app.bambumon.ui.components.TempStrip
 import app.bambumon.ui.components.TempTiles
 import app.bambumon.ui.components.WifiNote
 import app.bambumon.ui.components.needsAttention
+import app.bambumon.ui.details.DetailsScreen
 import app.bambumon.ui.history.HistoryScreen
 import app.bambumon.ui.theme.LocalBambuType
 import app.bambumon.ui.theme.Palette
@@ -76,6 +77,7 @@ private class Dash(
     val vm: DashboardViewModel,
     val onFullscreen: () -> Unit,
     val onHistory: () -> Unit,
+    val onDetails: () -> Unit,
     val onForget: () -> Unit,
     val onUpdateCode: () -> Unit,
 ) {
@@ -93,6 +95,7 @@ fun DashboardScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     var fullscreen by rememberSaveable { mutableStateOf(false) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
+    var showDetails by rememberSaveable { mutableStateOf(false) }
 
     // Hold the printer connection open while the dashboard is visible.
     DisposableEffect(vm) {
@@ -104,6 +107,11 @@ fun DashboardScreen(
     // while visible, so this never fires from the background).
     val printing = state.isLive && state.status?.jobState?.isActive == true
     LaunchedEffect(printing) { if (printing) vm.printSeenWhileOpen() }
+
+    if (showDetails) {
+        DetailsScreen(onBack = { showDetails = false })
+        return
+    }
 
     if (showHistory) {
         val records by vm.history.records.collectAsStateWithLifecycle()
@@ -122,7 +130,7 @@ fun DashboardScreen(
         return
     }
 
-    val d = Dash(state, config, tls, vm, { fullscreen = true }, { showHistory = true }, onForget, onUpdateCode)
+    val d = Dash(state, config, tls, vm, { fullscreen = true }, { showHistory = true }, { showDetails = true }, onForget, onUpdateCode)
     val info = currentWindowAdaptiveInfo()
     when {
         info.windowPosture.isTabletop -> TabletopLayout(d)
@@ -146,7 +154,7 @@ private fun FoldedLayout(d: Dash) {
         CameraPanel(d.config, d.tls, Modifier.fillMaxWidth().aspectRatio(CameraAspect), onFullscreen = d.onFullscreen)
         if (needsAttention(s)) PrinterAlertCard(s!!, d.state.jobControlEnabled, d.vm::resume, d.vm::stopPrint)
         Column(Modifier.dimWhenStale(d.live), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            JobCard(s, d.state.nowMs, d.live, Modifier.fillMaxWidth())
+            JobCard(s, d.state.nowMs, d.live, Modifier.fillMaxWidth(), onDetails = d.onDetails)
             TempTiles(s, d.live, Modifier.fillMaxWidth())
             AmsCard(s, Modifier.fillMaxWidth())
             Panel(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -176,7 +184,7 @@ private fun UnfoldedLayout(d: Dash) {
             HealthBanner(d.state, d.vm::retryNow, d.onUpdateCode)
             CameraPanel(d.config, d.tls, Modifier.fillMaxWidth().aspectRatio(CameraAspect), radius = 22.dp, onFullscreen = d.onFullscreen)
             if (needsAttention(s)) PrinterAlertCard(s!!, d.state.jobControlEnabled, d.vm::resume, d.vm::stopPrint)
-            JobCard(s, d.state.nowMs, d.live, Modifier.fillMaxWidth().dimWhenStale(d.live), heroSize = 72)
+            JobCard(s, d.state.nowMs, d.live, Modifier.fillMaxWidth().dimWhenStale(d.live), heroSize = 72, onDetails = d.onDetails)
             Controls(d, Modifier.fillMaxWidth())
         }
         Column(
@@ -212,6 +220,7 @@ private fun TabletopLayout(d: Dash) {
                     Text((s?.let(Format::phase) ?: "Waiting").uppercase(), style = t.eyebrow, color = if (d.live) Palette.amber else Palette.muted)
                     Text(s?.jobName ?: "—", style = t.jobName, color = Palette.text, maxLines = 2)
                     LinkChip(d.state, compact = true)
+                    if (s?.jobState?.isActive == true) app.bambumon.ui.components.DetailsLink(d.onDetails)
                 }
                 Column(Modifier.dimWhenStale(d.live), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.Bottom) {

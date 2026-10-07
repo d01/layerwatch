@@ -5,7 +5,9 @@ import app.bambumon.printer.PrinterRepository
 import app.bambumon.printer.PrinterTls
 import app.bambumon.protocol.ftps.FtpsClient
 import app.bambumon.protocol.job.JobArchive
+import app.bambumon.protocol.PrinterStatus
 import app.bambumon.protocol.job.JobFile
+import app.bambumon.protocol.job.LayerSample
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -46,7 +48,14 @@ class JobRepository(
     val state: StateFlow<JobLoad> = _state.asStateFlow()
     private var loading: Job? = null
 
+    /** When each layer of the active job was seen starting (for the pace estimate). */
+    private val _samples = MutableStateFlow<List<LayerSample>>(emptyList())
+    val samples: StateFlow<List<LayerSample>> = _samples.asStateFlow()
+    private var samplesKey: JobKey? = null
+    private var lastSeenLayer: Int? = null
+
     init {
+        scope.launch(Dispatchers.IO) { printer.status.collect(::recordLayer) }
         scope.launch {
             printer.status
                 .map { s -> s?.takeIf { it.jobState.isActive }?.jobName?.let { JobKey(it, s.plateIndex ?: 1) } }
@@ -54,6 +63,39 @@ class JobRepository(
                 .collect { key -> if (key != null) load(key) }
         }
     }
+
+    /**
+     * A sample is kept only for a layer change actually observed in this session, so
+     * opening the app mid-layer doesn't skew the pace. The very first sighting of a job
+     * is kept too, as the anchor for the slicer's plan.
+     */
+    private fun recordLayer(s: PrinterStatus?) {
+        val key = s?.takeIf { it.jobState.isActive }?.jobName?.let { JobKey(it, s.plateIndex ?: 1) } ?: return
+        val layer = s.layer?.takeIf { it > 0 } ?: return
+        if (key != samplesKey) {
+            samplesKey = key
+            lastSeenLayer = null
+            _samples.value = loadSamples(key)
+        }
+        val seen = lastSeenLayer
+        lastSeenLayer = layer
+        val last = _samples.value.lastOrNull()?.layer
+        val observedChange = seen != null && layer > seen
+        if ((observedChange && (last == null || layer > last)) || _samples.value.isEmpty()) {
+            val sample = LayerSample(layer, System.currentTimeMillis())
+            _samples.value = _samples.value + sample
+            runCatching { samplesFile(key).appendText("${sample.layer},${sample.atMs}\n") }
+        }
+    }
+
+    private fun samplesFile(key: JobKey) = File(dir.apply { mkdirs() }, localFile(key).name.removeSuffix(".gcode.3mf") + ".layers")
+
+    private fun loadSamples(key: JobKey): List<LayerSample> = runCatching {
+        samplesFile(key).readLines().mapNotNull { line ->
+            val (l, t) = line.split(',').takeIf { it.size == 2 } ?: return@mapNotNull null
+            LayerSample(l.toIntOrNull() ?: return@mapNotNull null, t.toLongOrNull() ?: return@mapNotNull null)
+        }
+    }.getOrDefault(emptyList())
 
     /** Try again after a failure (e.g. the printer was unreachable). */
     fun retry() {
@@ -118,7 +160,10 @@ class JobRepository(
         dir.listFiles { f -> f.name.endsWith(".gcode.3mf") }
             ?.sortedByDescending { it.lastModified() }
             ?.drop(MAX_CACHED)
-            ?.forEach { it.delete() }
+            ?.forEach { stale ->
+                stale.delete()
+                File(dir, stale.name.removeSuffix(".gcode.3mf") + ".layers").delete()
+            }
     }
 
     private companion object {

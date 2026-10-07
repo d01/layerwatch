@@ -25,8 +25,31 @@ import kotlin.coroutines.resume
 object Snapshot {
     private const val TAG = "bambumon.snapshot"
 
+    /**
+     * Number of on-screen camera players. The printer's camera serves a second client
+     * badly: a snapshot taken while the dashboard plays froze the live view. So grabs are
+     * skipped while anyone is watching (they're looking at the camera anyway).
+     */
+    private val viewers = java.util.concurrent.atomic.AtomicInteger()
+
+    /** A grab in progress; cancelled the moment a viewer opens the camera. */
+    @Volatile private var inFlight: java.util.concurrent.Future<*>? = null
+
+    fun viewerStarted() {
+        viewers.incrementAndGet()
+        inFlight?.cancel(true)
+    }
+
+    fun viewerStopped() {
+        viewers.decrementAndGet()
+    }
+
     @OptIn(UnstableApi::class)
     suspend fun grab(context: Context, tls: PrinterTls, config: PrinterConfig, timeoutMs: Long = 12_000): Bitmap? {
+        if (viewers.get() > 0) {
+            Log.i(TAG, "skipped: camera is on screen")
+            return null
+        }
         val source = RtspMediaSource.Factory()
             .setForceUseRtpTcp(true)
             .setSocketFactory(tls.socketFactory(config.serial))
@@ -41,6 +64,7 @@ object Snapshot {
             withTimeoutOrNull(timeoutMs) {
                 suspendCancellableCoroutine { cont ->
                     val future = extractor.getFrame(0)
+                    inFlight = future
                     cont.invokeOnCancellation { future.cancel(true) }
                     future.addListener({
                         val frame = runCatching { future.get() }
@@ -51,6 +75,7 @@ object Snapshot {
                 }
             }.also { if (it == null) Log.w(TAG, "snapshot timed out or failed") }
         } finally {
+            inFlight = null
             withContext(Dispatchers.Main) { extractor.close() }
         }
     }

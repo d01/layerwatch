@@ -64,6 +64,7 @@ import app.bambumon.ui.components.TempStrip
 import app.bambumon.ui.components.TempTiles
 import app.bambumon.ui.components.WifiNote
 import app.bambumon.ui.components.needsAttention
+import app.bambumon.ui.history.HistoryScreen
 import app.bambumon.ui.theme.LocalBambuType
 import app.bambumon.ui.theme.Palette
 
@@ -74,6 +75,7 @@ private class Dash(
     val tls: PrinterTls,
     val vm: DashboardViewModel,
     val onFullscreen: () -> Unit,
+    val onHistory: () -> Unit,
     val onForget: () -> Unit,
     val onUpdateCode: () -> Unit,
 ) {
@@ -90,6 +92,7 @@ fun DashboardScreen(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     var fullscreen by rememberSaveable { mutableStateOf(false) }
+    var showHistory by rememberSaveable { mutableStateOf(false) }
 
     // Hold the printer connection open while the dashboard is visible.
     DisposableEffect(vm) {
@@ -102,6 +105,12 @@ fun DashboardScreen(
     val printing = state.isLive && state.status?.jobState?.isActive == true
     LaunchedEffect(printing) { if (printing) vm.printSeenWhileOpen() }
 
+    if (showHistory) {
+        val records by vm.history.records.collectAsStateWithLifecycle()
+        HistoryScreen(records, vm.history, onBack = { showHistory = false })
+        return
+    }
+
     if (fullscreen) {
         BackHandler { fullscreen = false }
         Box(Modifier.fillMaxSize().background(Palette.ground)) {
@@ -113,7 +122,7 @@ fun DashboardScreen(
         return
     }
 
-    val d = Dash(state, config, tls, vm, { fullscreen = true }, onForget, onUpdateCode)
+    val d = Dash(state, config, tls, vm, { fullscreen = true }, { showHistory = true }, onForget, onUpdateCode)
     val info = currentWindowAdaptiveInfo()
     when {
         info.windowPosture.isTabletop -> TabletopLayout(d)
@@ -260,6 +269,7 @@ private fun MoreMenu(d: Dash) {
         ) { Glyph(R.drawable.ic_more, Palette.text, 20.dp, description = "More options") }
         val watching by d.vm.watchInBackground.collectAsStateWithLifecycle()
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(text = { Text("Print history") }, onClick = { open = false; d.onHistory() })
             DropdownMenuItem(
                 text = { Text(if (watching) "Background watching: on" else "Background watching: off") },
                 onClick = { open = false; d.vm.setWatchInBackground(!watching) },

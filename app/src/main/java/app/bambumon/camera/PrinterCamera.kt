@@ -78,6 +78,7 @@ class PrinterCamera(
 
     fun start(): ExoPlayer {
         player?.let { return it }
+        Snapshot.viewerStarted()
         // The printer's own WiFi delivers frames with gaps up to ~700 ms even to a wired
         // client (tools/stream_jitter.py), and the VPN adds more. DefaultLoadControl keeps
         // loading; when to *start* playing is the adaptive cushion's call.
@@ -116,7 +117,10 @@ class PrinterCamera(
 
     fun stop() {
         main.removeCallbacksAndMessages(null)
-        if (player != null) Log.i(TAG, "stopped: ${_state.value}")
+        if (player != null) {
+            Log.i(TAG, "stopped: ${_state.value}")
+            Snapshot.viewerStopped()
+        }
         player?.release()
         player = null
         attempt = 0

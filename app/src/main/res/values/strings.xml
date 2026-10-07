@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Bambumon</string>
+    <string name="widget_description">Print progress and the chamber camera</string>
 </resources>

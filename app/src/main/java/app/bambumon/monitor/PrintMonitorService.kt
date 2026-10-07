@@ -8,9 +8,14 @@ import android.os.IBinder
 import android.util.Log
 import app.bambumon.BambumonApp
 import app.bambumon.printer.printerModelName
+import app.bambumon.camera.Snapshot
+import app.bambumon.history.Outcome
+import app.bambumon.history.PrintHistory
 import app.bambumon.protocol.JobState
+import app.bambumon.protocol.PrintEvent
 import app.bambumon.protocol.LinkState
 import app.bambumon.protocol.PrintEventDetector
+import app.bambumon.widget.WidgetStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.joinAll
@@ -61,6 +66,7 @@ class PrintMonitorService : Service() {
         scope.launch { watchLostContact() }
         scope.launch { updateOngoing() }
         scope.launch { stopWhenDisabled() }
+        scope.launch { refreshWidgetFrame() }
         Log.i(TAG, "monitor started")
     }
 
@@ -80,14 +86,35 @@ class PrintMonitorService : Service() {
      */
     private suspend fun followPrint() {
         val detector = PrintEventDetector()
+        val history = app.history
+        var key: String? = null
         repo.status.filterNotNull().collect { s ->
+            if (s.jobState.isActive && key == null) {
+                key = PrintHistory.keyFor(s.taskId, s.jobName, System.currentTimeMillis())
+                history.begin(key!!, s.jobName, s.totalLayers, System.currentTimeMillis())
+            }
             detector.update(s).forEach { e ->
                 Log.i(TAG, "event: $e")
+                val recordKey = key
+                val outcome = when (e) {
+                    is PrintEvent.Finished -> Outcome.Finished
+                    is PrintEvent.Failed -> Outcome.Failed
+                    else -> null
+                }
+                if (outcome != null && recordKey != null) {
+                    history.finish(recordKey, outcome, (e as? PrintEvent.Failed)?.printError, System.currentTimeMillis())
+                }
                 // Off the collector so the snapshot never delays the next report.
-                alertJobs += scope.launch { postAlertWithSnapshot(this@PrintMonitorService, notes, e) }
+                alertJobs += scope.launch {
+                    val picture = postAlertWithSnapshot(this@PrintMonitorService, notes, e)
+                    if (picture != null) WidgetStore.pushFrame(this@PrintMonitorService, picture)
+                    if (picture != null && outcome != null && recordKey != null) history.attachSnapshot(recordKey, picture)
+                }
                 alertJobs.removeAll { it.isCompleted }
             }
             if (s.jobState != JobState.Unknown && !s.jobState.isActive) {
+                // Ended without a finished/failed transition we saw (e.g. stopped to idle).
+                key?.let { history.finish(it, Outcome.Unknown, s.printError, System.currentTimeMillis()) }
                 Log.i(TAG, "print over (${s.jobState}); stopping once alerts are out")
                 // The "finished" snapshot is the one people most want; let it land.
                 withTimeoutOrNull(SNAPSHOT_GRACE_MS) { alertJobs.joinAll() }
@@ -127,6 +154,17 @@ class PrintMonitorService : Service() {
         }
     }
 
+    /** A fresh chamber frame for the home-screen widget every [WIDGET_FRAME_MS] (~0.5 MB each). */
+    private suspend fun refreshWidgetFrame() {
+        while (true) {
+            val cfg = repo.config.value
+            if (cfg != null && repo.link.value is LinkState.Online) {
+                Snapshot.grab(this, app.tls, cfg)?.let { WidgetStore.pushFrame(this, it) }
+            }
+            delay(WIDGET_FRAME_MS)
+        }
+    }
+
     private suspend fun stopWhenDisabled() {
         app.settings.watchInBackground.first { !it }
         Log.i(TAG, "background watching turned off")
@@ -140,6 +178,7 @@ class PrintMonitorService : Service() {
         private const val LOST_AFTER_MS = 2 * 60_000L
         private const val NOTIFY_MIN_MS = 2_000L
         private const val SNAPSHOT_GRACE_MS = 15_000L
+        private const val WIDGET_FRAME_MS = 10 * 60_000L
 
         /** Only legal while the app is visible, which is the only time it's called. */
         fun start(context: Context) {

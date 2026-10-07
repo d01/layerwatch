@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.graphics.Bitmap
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -117,13 +118,17 @@ class MonitorNotifications(private val context: Context) {
 
     fun postOngoing(n: Notification) = nm.notify(ID_ONGOING, n)
 
-    fun alert(event: PrintEvent, model: String) {
+    /**
+     * Posts the alert for [event]; returns false for events that don't alert. Called a
+     * second time with [snapshot] once a camera frame is in hand: same id, silent update.
+     */
+    fun alert(event: PrintEvent, model: String, snapshot: Bitmap? = null): Boolean {
         val job = event.jobName ?: "Print"
         val (id, title, text) = when (event) {
-            is PrintEvent.Started -> return // shown by the progress notification
+            is PrintEvent.Started -> return false // shown by the progress notification
             is PrintEvent.Resumed -> {
                 nm.cancel(ID_PAUSED)
-                return
+                return false
             }
             is PrintEvent.Finished -> Triple(ID_FINISHED, "Print finished", "$job is done on $model.")
             is PrintEvent.Failed -> Triple(
@@ -145,9 +150,14 @@ class MonitorNotifications(private val context: Context) {
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
-            .setStyle(Notification.BigTextStyle().bigText(text))
+            .setStyle(
+                if (snapshot != null) Notification.BigPictureStyle().bigPicture(snapshot).setSummaryText(text)
+                else Notification.BigTextStyle().bigText(text)
+            )
+            .apply { if (snapshot != null) setLargeIcon(snapshot) }
             .setContentIntent(openApp())
             .setAutoCancel(true)
+            .setOnlyAlertOnce(true) // the snapshot update must not buzz again
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setCategory(if (event is PrintEvent.Finished || event is PrintEvent.FirstLayerDone) Notification.CATEGORY_STATUS else Notification.CATEGORY_ERROR)
         if (event is PrintEvent.NewHms) {
@@ -162,7 +172,9 @@ class MonitorNotifications(private val context: Context) {
                 ).build()
             )
         }
+        if (snapshot == null) nm.cancel(id) // a fresh event should alert even if an old one is still shown
         nm.notify(id, b.build())
+        return true
     }
 
     fun lostContact(model: String, sinceMs: Long) {

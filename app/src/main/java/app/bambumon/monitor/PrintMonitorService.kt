@@ -12,6 +12,9 @@ import app.bambumon.protocol.JobState
 import app.bambumon.protocol.LinkState
 import app.bambumon.protocol.PrintEventDetector
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -38,6 +41,7 @@ class PrintMonitorService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
     private lateinit var notes: MonitorNotifications
     private var hold: (() -> Unit)? = null
+    private val alertJobs = mutableListOf<Job>()
 
     private val app get() = application as BambumonApp
     private val repo get() = app.printer
@@ -79,10 +83,14 @@ class PrintMonitorService : Service() {
         repo.status.filterNotNull().collect { s ->
             detector.update(s).forEach { e ->
                 Log.i(TAG, "event: $e")
-                notes.alert(e, model())
+                // Off the collector so the snapshot never delays the next report.
+                alertJobs += scope.launch { postAlertWithSnapshot(this@PrintMonitorService, notes, e) }
+                alertJobs.removeAll { it.isCompleted }
             }
             if (s.jobState != JobState.Unknown && !s.jobState.isActive) {
-                Log.i(TAG, "print over (${s.jobState}); stopping")
+                Log.i(TAG, "print over (${s.jobState}); stopping once alerts are out")
+                // The "finished" snapshot is the one people most want; let it land.
+                withTimeoutOrNull(SNAPSHOT_GRACE_MS) { alertJobs.joinAll() }
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
@@ -131,6 +139,7 @@ class PrintMonitorService : Service() {
         private const val TAG = "bambumon.monitor"
         private const val LOST_AFTER_MS = 2 * 60_000L
         private const val NOTIFY_MIN_MS = 2_000L
+        private const val SNAPSHOT_GRACE_MS = 15_000L
 
         /** Only legal while the app is visible, which is the only time it's called. */
         fun start(context: Context) {

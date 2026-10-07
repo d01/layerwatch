@@ -181,7 +181,7 @@ private fun Narrow(state: DetailsState, job: JobFile, images: JobImages) {
 private fun BuildPanel(state: DetailsState, job: JobFile, images: JobImages, modifier: Modifier, fill: Boolean) {
     val t = LocalBambuType.current
     val model = job.gcode
-    var mode by rememberSaveable { mutableStateOf(if (model != null) "Layer" else "3D build") }
+    var mode by rememberSaveable { mutableStateOf("3D build") }
     var pinned by rememberSaveable { mutableStateOf<Int?>(null) } // null = follow live
     val total = model?.layers?.size ?: 0
     val live = state.currentLayer.coerceIn(1, total.coerceAtLeast(1))
@@ -190,16 +190,20 @@ private fun BuildPanel(state: DetailsState, job: JobFile, images: JobImages, mod
 
     Panel(modifier, padding = 14.dp, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Segmented(listOf("3D build", "Layer"), mode, { mode = it })
-        val viewModifier = if (fill) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth().aspectRatio(viewAspect(model))
+        // Layer view fits the part's footprint; the 3D view needs height for the whole build.
+        val aspect = if (mode == "Layer") viewAspect(model) else 0.95f
+        val viewModifier = if (fill) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth().aspectRatio(aspect)
         Box(viewModifier.clip(RoundedCornerShape(16.dp)).background(Palette.ground), contentAlignment = Alignment.Center) {
             if (mode == "Layer" && model != null && paths != null) {
                 LayerCanvas(model, paths, layer, Modifier.fillMaxSize())
+            } else if (model != null) {
+                BuildView3D(model, layer, Modifier.fillMaxSize())
             } else {
                 images.render?.let { Image(it, "Slicer render of the plate", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
             }
         }
         if (model != null) {
-            if (mode == "Layer") FeatureLegend(model.layer(layer)?.features.orEmpty())
+            if (mode == "Layer") FeatureLegend(model.layer(layer)?.features.orEmpty()) else BuildLegend(layer)
             LayerScrubber(
                 layer = layer, liveLayer = live, total = total, following = pinned == null,
                 onLayer = { pinned = it.takeIf { l -> l != live } }, onLive = { pinned = null },
@@ -231,6 +235,19 @@ private fun Segmented(options: List<String>, selected: String, onSelect: (String
                     .selectable(selected = on, role = Role.Tab, onClick = { onSelect(o) }),
                 contentAlignment = Alignment.Center,
             ) { Text(o, style = t.label, color = if (on) Palette.text else Palette.muted) }
+        }
+    }
+}
+
+@Composable
+private fun BuildLegend(layer: Int) {
+    val t = LocalBambuType.current
+    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        listOf(Palette.amber to "Printed", androidx.compose.ui.graphics.Color(0xFFFFE2A8) to "Layer $layer", androidx.compose.ui.graphics.Color(0xFF3A4046) to "Still to print").forEach { (c, l) ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(Modifier.size(width = 10.dp, height = 3.dp).clip(RoundedCornerShape(2.dp)).background(c))
+                Text(l, style = t.caption, color = Palette.muted)
+            }
         }
     }
 }

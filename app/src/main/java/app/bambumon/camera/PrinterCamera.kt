@@ -14,6 +14,13 @@ import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.common.Timeline
+import androidx.media3.exoplayer.LoadControl
+import androidx.media3.exoplayer.analytics.PlayerId
+import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.TrackGroupArray
+import androidx.media3.exoplayer.trackselection.ExoTrackSelection
+import androidx.media3.exoplayer.upstream.Allocator
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.rtsp.RtspMediaSource
 import app.bambumon.config.PrinterConfig
@@ -34,6 +41,9 @@ data class CameraState(
     val rebuffers: Int = 0,
     val reconnects: Int = 0,
     val lastError: String? = null,
+    /** Current adaptive cushion and how far behind live playback is. */
+    val cushionMs: Long = 0,
+    val latencyMs: Long = 0,
 ) {
     enum class Status { Stopped, Connecting, Playing, Retrying }
 }
@@ -64,30 +74,44 @@ class PrinterCamera(
         private set
     private var startedAt = 0L
     private var attempt = 0
+    private val cushion = CushionPolicy()
 
     fun start(): ExoPlayer {
         player?.let { return it }
-        val p = ExoPlayer.Builder(context)
-            .setLoadControl(
-                DefaultLoadControl.Builder()
-                    // The printer's own WiFi delivers frames with gaps up to ~700 ms even to a
-                    // wired client (tools/stream_jitter.py), and the VPN adds more. Holding
-                    // ~1 s before playing (and after any rebuffer) rides those out at the
-                    // cost of ~1 s latency, which is fine for watching a print.
-                    .setBufferDurationsMs(
-                        /* minBufferMs = */ CUSHION_MS,
-                        /* maxBufferMs = */ 4_000,
-                        /* bufferForPlaybackMs = */ CUSHION_MS,
-                        /* bufferForPlaybackAfterRebufferMs = */ CUSHION_MS,
-                    )
-                    .build()
+        // The printer's own WiFi delivers frames with gaps up to ~700 ms even to a wired
+        // client (tools/stream_jitter.py), and the VPN adds more. DefaultLoadControl keeps
+        // loading; when to *start* playing is the adaptive cushion's call.
+        val loads = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 4_000,
+                /* maxBufferMs = */ 8_000,
+                /* bufferForPlaybackMs = */ 500,
+                /* bufferForPlaybackAfterRebufferMs = */ 500,
             )
             .build()
+        val p = ExoPlayer.Builder(context)
+            .setLoadControl(CushionedLoadControl(loads) { cushion.cushionMs * 1_000 })
+            .build()
+        cushion.onStart(SystemClock.elapsedRealtime())
         p.addListener(playerListener)
         p.addAnalyticsListener(analyticsListener)
         player = p
         connect()
+        main.post(tick)
         return p
+    }
+
+    private val tick = object : Runnable {
+        override fun run() {
+            val p = player ?: return
+            if (p.isPlaying) {
+                val ahead = p.bufferedPosition - p.currentPosition
+                val speed = cushion.onTick(SystemClock.elapsedRealtime(), ahead)
+                if (p.playbackParameters.speed != speed) p.setPlaybackSpeed(speed)
+                _state.update { it.copy(cushionMs = cushion.cushionMs, latencyMs = ahead) }
+            }
+            main.postDelayed(this, 1_000)
+        }
     }
 
     fun stop() {
@@ -144,8 +168,9 @@ class PrinterCamera(
                 Player.STATE_BUFFERING -> {
                     main.postDelayed(stallCheck, STALL_TIMEOUT_MS)
                     if (_state.value.status == CameraState.Status.Playing) {
-                        _state.update { it.copy(rebuffers = it.rebuffers + 1) }
-                        Log.i(TAG, "freeze #${_state.value.rebuffers}: buffer ran dry")
+                        cushion.onFreeze(SystemClock.elapsedRealtime())
+                        _state.update { it.copy(rebuffers = it.rebuffers + 1, cushionMs = cushion.cushionMs) }
+                        Log.i(TAG, "freeze #${_state.value.rebuffers}: buffer ran dry; cushion now ${cushion.cushionMs}ms")
                     }
                 }
                 // A live stream that "ends" means the printer dropped the session.
@@ -182,7 +207,6 @@ class PrinterCamera(
         private const val RETRY_BASE_MS = 1_000L
         private const val RETRY_MAX_MS = 30_000L
         private const val STALL_TIMEOUT_MS = 10_000L
-        private const val CUSHION_MS = 1_000
 
         fun streamUri(config: PrinterConfig): Uri = Uri.Builder()
             .scheme("rtsps")
@@ -192,4 +216,39 @@ class PrinterCamera(
 
         private fun hostForUri(host: String) = if (':' in host && !host.startsWith('[')) "[$host]" else host
     }
+}
+
+/**
+ * Defers to [delegate] for everything except when playback may (re)start.
+ *
+ * Forwarded explicitly: Kotlin's `by` delegation skips Java default methods, and
+ * LoadControl is almost entirely defaults, so `by delegate` crashes at player build.
+ * These are the overloads ExoPlayer 1.11 calls; the deprecated ones chain to them.
+ */
+@OptIn(UnstableApi::class)
+private class CushionedLoadControl(
+    private val delegate: LoadControl,
+    private val cushionUs: () -> Long,
+) : LoadControl {
+    override fun onPrepared(playerId: PlayerId) = delegate.onPrepared(playerId)
+    override fun onTracksSelected(
+        parameters: LoadControl.Parameters,
+        trackGroups: TrackGroupArray,
+        trackSelections: Array<out ExoTrackSelection?>,
+    ) = delegate.onTracksSelected(parameters, trackGroups, trackSelections)
+    override fun onStopped(playerId: PlayerId) = delegate.onStopped(playerId)
+    override fun onReleased(playerId: PlayerId) = delegate.onReleased(playerId)
+    override fun getAllocator(playerId: PlayerId): Allocator = delegate.getAllocator(playerId)
+    override fun getBackBufferDurationUs(playerId: PlayerId) = delegate.getBackBufferDurationUs(playerId)
+    override fun retainBackBufferFromKeyframe(playerId: PlayerId) = delegate.retainBackBufferFromKeyframe(playerId)
+    override fun shouldContinueLoading(parameters: LoadControl.Parameters) = delegate.shouldContinueLoading(parameters)
+    override fun shouldContinuePreloading(
+        playerId: PlayerId,
+        timeline: Timeline,
+        mediaPeriodId: MediaSource.MediaPeriodId,
+        bufferedDurationUs: Long,
+    ) = delegate.shouldContinuePreloading(playerId, timeline, mediaPeriodId, bufferedDurationUs)
+
+    override fun shouldStartPlayback(parameters: LoadControl.Parameters): Boolean =
+        parameters.bufferedDurationUs >= cushionUs()
 }

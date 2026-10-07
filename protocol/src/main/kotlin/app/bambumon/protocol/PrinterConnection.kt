@@ -105,7 +105,15 @@ class PrinterConnection(
     }
 
     /** Ask the printer for a full state dump. */
-    fun requestFullStatus(): Boolean = send("""{"pushing":{"sequence_id":"${sequence.getAndIncrement()}","command":"pushall"}}""")
+    fun requestFullStatus(): Boolean = send(PrinterCommands.pushAll(nextSequence()))
+
+    fun setChamberLight(on: Boolean): Boolean = send(PrinterCommands.chamberLight(nextSequence(), on))
+    fun pause(): Boolean = send(PrinterCommands.pause(nextSequence()))
+    fun resume(): Boolean = send(PrinterCommands.resume(nextSequence()))
+    fun stopPrint(): Boolean = send(PrinterCommands.stop(nextSequence()))
+    fun setSpeed(level: SpeedLevel): Boolean = send(PrinterCommands.speed(nextSequence(), level))
+
+    private fun nextSequence() = sequence.getAndIncrement()
 
     /** Publishes a raw command to the printer. Returns false if not currently online. */
     fun send(json: String): Boolean {

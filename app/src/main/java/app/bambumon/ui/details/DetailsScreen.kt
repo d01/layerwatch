@@ -43,6 +43,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.bambumon.R
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.platform.LocalContext
+import app.bambumon.BambumonApp
+import app.bambumon.job.JobKey
 import app.bambumon.job.JobLoad
 import app.bambumon.protocol.job.JobFile
 import app.bambumon.ui.components.ControlButton
@@ -62,6 +66,27 @@ fun DetailsScreen(onBack: () -> Unit, vm: DetailsViewModel = viewModel()) {
         onDispose(release)
     }
     val state by vm.state.collectAsStateWithLifecycle()
+    DetailsContent(state, onBack, vm::retry)
+}
+
+/**
+ * Details of a past print from its cached job file: the finished build, slicing summary
+ * and objects. No live status, schedule or forecast.
+ */
+@Composable
+fun ArchivedDetailsScreen(jobName: String, onBack: () -> Unit) {
+    BackHandler(onBack = onBack)
+    val graph = LocalContext.current.applicationContext as BambumonApp
+    val key = JobKey(jobName, 1)
+    val load by produceState<JobLoad>(JobLoad.Parsing(key), jobName) {
+        value = graph.jobs.readCached(jobName)?.let { JobLoad.Ready(key, it) }
+            ?: JobLoad.Unavailable(key, "This job's file is no longer cached on the phone.")
+    }
+    DetailsContent(DetailsState(load = load), onBack, onRetry = {})
+}
+
+@Composable
+private fun DetailsContent(state: DetailsState, onBack: () -> Unit, onRetry: () -> Unit) {
     val wide = currentWindowAdaptiveInfo().windowSizeClass.minWidthDp >= 600
 
     Column(Modifier.fillMaxSize().background(Palette.ground).safeDrawingPadding()) {
@@ -71,7 +96,7 @@ fun DetailsScreen(onBack: () -> Unit, vm: DetailsViewModel = viewModel()) {
                 val images = rememberImages(load.job)
                 if (wide) Wide(state, load.job, images) else Narrow(state, load.job, images)
             }
-            else -> LoadingOrUnavailable(load, vm::retry)
+            else -> LoadingOrUnavailable(load, onRetry)
         }
     }
 }
@@ -100,9 +125,9 @@ private fun Header(state: DetailsState, onBack: () -> Unit, modifier: Modifier) 
             val eyebrow = buildList {
                 if (layer != null && s.totalLayers != null) add("Layer $layer / ${s.totalLayers}")
                 z?.let { add("%.1f mm".format(it)) }
-            }.joinToString(" · ").ifBlank { s?.let(Format::phase) ?: "Print details" }
+            }.joinToString(" · ").ifBlank { s?.let(Format::phase) ?: if (s == null && state.load is JobLoad.Ready) "Print details · finished" else "Print details" }
             Text(eyebrow.uppercase(), style = t.eyebrow, color = Palette.amber)
-            Text(s?.jobName ?: (state.load as? JobLoad.Ready)?.key?.name ?: "—", style = t.jobName, color = Palette.text, maxLines = 1)
+            Text(s?.jobName ?: (state.load as? JobLoad.Ready)?.key?.name ?: (state.load as? JobLoad.Unavailable)?.key?.name ?: "—", style = t.jobName, color = Palette.text, maxLines = 1)
         }
     }
 }
@@ -149,9 +174,11 @@ private fun Wide(state: DetailsState, job: JobFile, images: JobImages) {
     Row(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         BuildPanel(state, job, images, Modifier.weight(1.22f).fillMaxHeight(), fill = true)
         Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            ScheduleCard(state.schedule, Modifier.fillMaxWidth())
-            job.gcode?.let { ComingUpCard(upcoming(it, state.currentLayer), Modifier.fillMaxWidth()) }
-            FilamentCard(state.filament, job, state.status, Modifier.fillMaxWidth())
+            if (state.status != null) {
+                ScheduleCard(state.schedule, Modifier.fillMaxWidth())
+                job.gcode?.let { ComingUpCard(upcoming(it, state.currentLayer), Modifier.fillMaxWidth()) }
+                FilamentCard(state.filament, job, state.status, Modifier.fillMaxWidth())
+            }
             SlicingCard(job, images.render, Modifier.fillMaxWidth(), full = true)
             ObjectsCard(job, images.top, Modifier.fillMaxWidth())
         }
@@ -165,11 +192,13 @@ private fun Narrow(state: DetailsState, job: JobFile, images: JobImages) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         BuildPanel(state, job, images, Modifier.fillMaxWidth(), fill = false)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ScheduleCard(state.schedule, Modifier.weight(1f), compact = true)
-            FilamentCard(state.filament, job, state.status, Modifier.weight(1f), compact = true)
+        if (state.status != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ScheduleCard(state.schedule, Modifier.weight(1f), compact = true)
+                FilamentCard(state.filament, job, state.status, Modifier.weight(1f), compact = true)
+            }
+            job.gcode?.let { ComingUpCard(upcoming(it, state.currentLayer), Modifier.fillMaxWidth()) }
         }
-        job.gcode?.let { ComingUpCard(upcoming(it, state.currentLayer), Modifier.fillMaxWidth()) }
         SlicingCard(job, images.render, Modifier.fillMaxWidth(), full = true)
         ObjectsCard(job, images.top, Modifier.fillMaxWidth())
     }
@@ -186,7 +215,7 @@ private fun BuildPanel(state: DetailsState, job: JobFile, images: JobImages, mod
     var mode by rememberSaveable { mutableStateOf("3D build") }
     var pinned by rememberSaveable { mutableStateOf<Int?>(null) } // null = follow live
     val total = model?.layers?.size ?: 0
-    val live = state.currentLayer.coerceIn(1, total.coerceAtLeast(1))
+    val live = (if (state.status == null) total else state.currentLayer).coerceIn(1, total.coerceAtLeast(1))
     val layer = (pinned ?: live).coerceIn(1, total.coerceAtLeast(1))
     val paths = remember(model) { model?.let(::LayerPaths) }
 

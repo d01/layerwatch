@@ -54,6 +54,8 @@ import app.bambumon.history.Outcome
 import app.bambumon.history.PrintRecord
 import app.bambumon.history.TimelapseRef
 import app.bambumon.ui.components.Bar
+import app.bambumon.ui.components.DetailsLink
+import app.bambumon.ui.details.ArchivedDetailsScreen
 import app.bambumon.ui.components.ControlButton
 import app.bambumon.ui.components.ControlStyle
 import app.bambumon.ui.components.Format
@@ -86,6 +88,11 @@ fun HistoryEntryScreen(record: PrintRecord, onBack: () -> Unit) {
     var lapse by remember(record.key) { mutableStateOf<Lapse>(Lapse.Searching) }
     var playing by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf<String?>(null) }
+    var showDetails by remember { mutableStateOf(false) }
+    if (showDetails && record.jobName != null) {
+        ArchivedDetailsScreen(record.jobName, onBack = { showDetails = false })
+        return
+    }
     val snapshot = remember(record) {
         app.history.snapshot(record)?.let { BitmapFactory.decodeFile(it.path)?.asImageBitmap() }
     }
@@ -176,6 +183,9 @@ fun HistoryEntryScreen(record: PrintRecord, onBack: () -> Unit) {
             }
 
             Panel(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                if (record.jobName != null && app.jobs.isCached(record.jobName)) {
+                    DetailsLink { showDetails = true }
+                }
                 summaryRows(record).forEach { (k, v) ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
                         Text(k, style = t.label, color = Palette.muted, modifier = Modifier.weight(1f))

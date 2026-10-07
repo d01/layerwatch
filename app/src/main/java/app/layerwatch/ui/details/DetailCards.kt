@@ -123,6 +123,9 @@ fun FilamentCard(
                             Box(Modifier.fillMaxWidth((n.neededG / avail).toFloat().coerceIn(0f, 1f)).height(6.dp).background(color))
                         }
                     }
+                    if (n.backupSlots.isNotEmpty()) {
+                        Text("incl. backup " + n.backupSlots.joinToString(", ") { "slot ${it % 4 + 1}" } + " (auto-refill)", style = t.caption, color = Palette.muted)
+                    }
                     n.runsOutAtLayer?.let { Text("Runs out around layer $it", style = t.caption, color = Palette.danger) }
                 }
             }

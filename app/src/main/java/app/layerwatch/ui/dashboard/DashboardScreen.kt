@@ -82,6 +82,7 @@ private class Dash(
     val onUpdateCode: () -> Unit,
 ) {
     val live get() = state.isLive
+    var dismissed: Set<String> = emptySet()
 }
 
 @Composable
@@ -131,6 +132,7 @@ fun DashboardScreen(
     }
 
     val d = Dash(state, config, tls, vm, { fullscreen = true }, { showHistory = true }, { showDetails = true }, onForget, onUpdateCode)
+    d.dismissed = vm.dismissedHms.collectAsStateWithLifecycle().value
     val info = currentWindowAdaptiveInfo()
     when {
         info.windowPosture.isTabletop -> TabletopLayout(d)
@@ -152,7 +154,7 @@ private fun FoldedLayout(d: Dash) {
         Header(d)
         HealthBanner(d.state, d.vm::retryNow, d.onUpdateCode)
         CameraPanel(d.config, d.tls, Modifier.fillMaxWidth().aspectRatio(CameraAspect), onFullscreen = d.onFullscreen)
-        if (needsAttention(s)) PrinterAlertCard(s!!, d.state.jobControlEnabled, d.vm::resume, d.vm::stopPrint)
+        if (needsAttention(s, d.dismissed)) PrinterAlertCard(s!!, d.state.jobControlEnabled, d.vm::resume, d.vm::stopPrint, dismissed = d.dismissed, onDismiss = d.vm::dismissHms)
         Column(Modifier.dimWhenStale(d.live), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             JobCard(s, d.state.nowMs, d.live, Modifier.fillMaxWidth(), onDetails = d.onDetails)
             TempTiles(s, d.live, Modifier.fillMaxWidth())
@@ -183,7 +185,7 @@ private fun UnfoldedLayout(d: Dash) {
             Header(d, showMenu = false)
             HealthBanner(d.state, d.vm::retryNow, d.onUpdateCode)
             CameraPanel(d.config, d.tls, Modifier.fillMaxWidth().aspectRatio(CameraAspect), radius = 22.dp, onFullscreen = d.onFullscreen)
-            if (needsAttention(s)) PrinterAlertCard(s!!, d.state.jobControlEnabled, d.vm::resume, d.vm::stopPrint)
+            if (needsAttention(s, d.dismissed)) PrinterAlertCard(s!!, d.state.jobControlEnabled, d.vm::resume, d.vm::stopPrint, dismissed = d.dismissed, onDismiss = d.vm::dismissHms)
             JobCard(s, d.state.nowMs, d.live, Modifier.fillMaxWidth().dimWhenStale(d.live), heroSize = 72, onDetails = d.onDetails)
             Controls(d, Modifier.fillMaxWidth())
         }
@@ -241,7 +243,7 @@ private fun TabletopLayout(d: Dash) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             HealthBanner(d.state, d.vm::retryNow, d.onUpdateCode)
-            if (needsAttention(s)) PrinterAlertCard(s!!, d.state.jobControlEnabled, d.vm::resume, d.vm::stopPrint)
+            if (needsAttention(s, d.dismissed)) PrinterAlertCard(s!!, d.state.jobControlEnabled, d.vm::resume, d.vm::stopPrint, dismissed = d.dismissed, onDismiss = d.vm::dismissHms)
             Controls(d, Modifier.fillMaxWidth(), minHeight = 76.dp, stacked = true, withSpeed = true)
             if (d.state.speedUnlocked) {
                 Text("Speed unlocked · choose within ${d.state.speedUnlockSec} s", style = t.label, color = Palette.amberText)

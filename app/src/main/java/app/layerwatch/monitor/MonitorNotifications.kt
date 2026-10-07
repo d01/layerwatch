@@ -11,7 +11,10 @@ import android.net.Uri
 import android.os.Build
 import app.layerwatch.MainActivity
 import app.layerwatch.R
+import app.layerwatch.protocol.HmsCatalog
+import app.layerwatch.protocol.HmsSeverity
 import app.layerwatch.protocol.JobState
+import app.layerwatch.protocol.level
 import app.layerwatch.protocol.LinkState
 import app.layerwatch.protocol.PrintEvent
 import app.layerwatch.protocol.PrinterStatus
@@ -148,17 +151,34 @@ class MonitorNotifications(private val context: Context) {
             is PrintEvent.Finished -> Triple(ID_FINISHED, "Print finished", "$job is done on $model.")
             is PrintEvent.Failed -> Triple(
                 ID_FAILED, "Print failed",
-                "$job stopped on $model." + (event.printError?.let { " Error $it." } ?: ""),
+                "$job stopped on $model." + (event.printError?.let { code ->
+                    code.replace("_", "").toLongOrNull(16)?.let(HmsCatalog::describeError)?.let { " $it" } ?: " Error $code."
+                } ?: ""),
             )
             is PrintEvent.Paused -> Triple(
                 ID_PAUSED,
                 if (event.byPrinter) event.reason else "Print paused",
                 if (event.byPrinter) "$job needs attention on $model." else "$job was paused.",
             )
-            is PrintEvent.NewHms -> Triple(
-                ID_HMS, "Printer alert",
-                event.alerts.joinToString(", ") { "HMS ${it.id}" } + " · $job",
-            )
+            is PrintEvent.NewHms -> {
+                // An auto-refill raises a run-out notice as it switches spools; the
+                // switch notification already says it better, so don't overwrite it.
+                if (event.alerts.none { it.level.isError } && System.currentTimeMillis() - lastSwitchAtMs < SWITCH_WINDOW_MS) return false
+                val worst = event.alerts.minByOrNull { if (it.level == HmsSeverity.Unknown) 9 else it.level.level }!!
+                Triple(
+                    ID_HMS,
+                    if (worst.level.isError) "Printer error" else "Printer notice",
+                    event.alerts.joinToString(" ") { HmsCatalog.describe(it) } + " · $job",
+                )
+            }
+            is PrintEvent.SpoolSwitched -> {
+                lastSwitchAtMs = System.currentTimeMillis()
+                Triple(
+                    ID_HMS, "Switched to backup spool",
+                    (event.fromSlot?.let { "Slot ${it % 4 + 1} ran out. " } ?: "") +
+                        "Continuing from slot ${event.toSlot % 4 + 1}" + (event.toName?.let { " ($it)" } ?: "") + ". $job keeps printing.",
+                )
+            }
             is PrintEvent.FirstLayerDone -> Triple(ID_FIRST_LAYER, "First layer done", "Have a look at $job's first layer.")
         }
         val b = Notification.Builder(context, CH_ALERTS)
@@ -174,7 +194,13 @@ class MonitorNotifications(private val context: Context) {
             .setAutoCancel(true)
             .setOnlyAlertOnce(true) // the snapshot update must not buzz again
             .setVisibility(Notification.VISIBILITY_PUBLIC)
-            .setCategory(if (event is PrintEvent.Finished || event is PrintEvent.FirstLayerDone) Notification.CATEGORY_STATUS else Notification.CATEGORY_ERROR)
+            .setCategory(
+                when {
+                    event is PrintEvent.Finished || event is PrintEvent.FirstLayerDone || event is PrintEvent.SpoolSwitched -> Notification.CATEGORY_STATUS
+                    event is PrintEvent.NewHms && event.alerts.none { it.level.isError } -> Notification.CATEGORY_STATUS
+                    else -> Notification.CATEGORY_ERROR
+                }
+            )
         if (event is PrintEvent.NewHms) {
             val url = event.alerts.first().wikiUrl
             b.addAction(
@@ -210,6 +236,8 @@ class MonitorNotifications(private val context: Context) {
         )
     }
 
+    private var lastSwitchAtMs = 0L
+
     fun lostContact(model: String, sinceMs: Long) {
         nm.notify(
             ID_LOST,
@@ -241,6 +269,7 @@ class MonitorNotifications(private val context: Context) {
         private const val ID_HMS = 13
         private const val ID_FIRST_LAYER = 14
         private const val ID_FILAMENT = 15
+        private const val SWITCH_WINDOW_MS = 2 * 60_000L
 
         private const val CH_PROGRESS = "progress"
         private const val CH_WATCHING = "watching"

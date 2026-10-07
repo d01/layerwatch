@@ -12,6 +12,17 @@ sealed interface PrintEvent {
     data class Paused(override val jobName: String?, val reason: String, val byPrinter: Boolean) : PrintEvent
     data class Resumed(override val jobName: String?) : PrintEvent
     data class NewHms(override val jobName: String?, val alerts: List<HmsAlert>) : PrintEvent
+    /**
+     * The printer moved the job to another AMS spool mid-print (auto-refill after a
+     * run-out): the job's `mapping` changed without the print stopping.
+     */
+    data class SpoolSwitched(
+        override val jobName: String?,
+        val fromSlot: Int?,
+        val toSlot: Int,
+        /** e.g. "PETG Basic" of the new spool, when the AMS knows. */
+        val toName: String?,
+    ) : PrintEvent
 }
 
 /**
@@ -56,6 +67,15 @@ class PrintEventDetector {
         val layer = s.layer
         if (now == JobState.Running && prevLayer != null && layer != null && prevLayer <= 1 && layer >= 2) {
             events += PrintEvent.FirstLayerDone(job)
+        }
+
+        if (now.isActive && was.isActive && prev.amsMapping.isNotEmpty() && s.amsMapping.isNotEmpty() && prev.amsMapping != s.amsMapping) {
+            val changed = s.amsMapping.indices.firstOrNull { prev.amsMapping.getOrNull(it) != s.amsMapping[it] }
+            val to = changed?.let { s.amsMapping[it] }?.takeIf { it in 0..253 }
+            if (to != null) {
+                val tray = s.ams.flatMap { it.trays }.firstOrNull { it.slot == to }
+                events += PrintEvent.SpoolSwitched(job, prev.amsMapping.getOrNull(changed)?.takeIf { it in 0..253 }, to, tray?.name ?: tray?.material)
+            }
         }
 
         val ids = s.hms.mapTo(mutableSetOf()) { it.id }

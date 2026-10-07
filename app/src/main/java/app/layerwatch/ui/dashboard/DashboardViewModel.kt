@@ -52,6 +52,14 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
     private val pendingLight = MutableStateFlow<Pair<Boolean, Long>?>(null)
     private val speedUnlockedUntil = MutableStateFlow(0L)
 
+    /** HMS notices the user dismissed; they stay hidden until a different code appears. */
+    private val _dismissedHms = MutableStateFlow<Set<String>>(emptySet())
+    val dismissedHms: StateFlow<Set<String>> = _dismissedHms
+
+    fun dismissHms(ids: Set<String>) {
+        _dismissedHms.value = _dismissedHms.value + ids
+    }
+
     private val ticker = flow {
         while (true) {
             emit(System.currentTimeMillis())

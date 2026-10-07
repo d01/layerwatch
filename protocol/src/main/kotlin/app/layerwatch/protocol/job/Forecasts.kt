@@ -11,7 +11,10 @@ data class FilamentNeed(
     val tool: Int,
     val neededG: Double,
     val amsSlot: Int?,
+    /** On the mapped spool plus any matching backup spools the AMS can auto-refill from. */
     val availableG: Double?,
+    /** Spools with the same filament that auto-refill can switch to (same type, brand, colour). */
+    val backupSlots: List<Int> = emptyList(),
     /** First layer at which the spool would run dry, if it would. */
     val runsOutAtLayer: Int?,
 ) {
@@ -48,16 +51,29 @@ object FilamentForecast {
         return model.extrudedAfter(currentLayer).toSortedMap().map { (tool, mm) ->
             val gPerMm = gramsPerMm(settings, tool)
             val slot = amsSlot(tool, usedTools, mapping)
-            val available = slot?.let { trays[it]?.remainingG }
+            val primary = slot?.let { trays[it] }
+            val backups = primary?.let { p -> backupsFor(p, trays.values, exclude = mapping.toSet()) }.orEmpty()
+            val available = primary?.remainingG?.let { it + backups.sumOf { b -> b.remainingG ?: 0.0 } }
             FilamentNeed(
                 tool = tool,
                 neededG = mm * gPerMm,
                 amsSlot = slot,
                 availableG = available,
+                backupSlots = backups.map { it.slot },
                 runsOutAtLayer = available?.let { runOutLayer(model, tool, currentLayer, it / gPerMm) },
             )
         }
     }
+
+    /**
+     * Spools auto-refill could switch to: same material, brand line and colour, with a
+     * known amount left, not already feeding another of the job's filaments.
+     */
+    fun backupsFor(primary: Tray, all: Collection<Tray>, exclude: Set<Int>): List<Tray> = all.filter {
+        it.slot != primary.slot && it.slot !in exclude && it.remainingG != null &&
+            it.material != null && it.material == primary.material &&
+            it.name == primary.name && it.colorHex.equals(primary.colorHex, ignoreCase = true)
+    }.sortedBy { it.slot }
 
     internal fun gramsPerMm(settings: SlicerSettings?, tool: Int): Double {
         val d = settings?.filamentDiameter(tool) ?: 1.75

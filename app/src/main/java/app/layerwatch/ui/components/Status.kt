@@ -34,7 +34,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.layerwatch.R
+import app.layerwatch.protocol.HmsCatalog
 import app.layerwatch.protocol.JobState
+import app.layerwatch.protocol.level
 import app.layerwatch.protocol.PrinterStatus
 import app.layerwatch.protocol.SpeedLevel
 import app.layerwatch.ui.dashboard.DashboardState
@@ -125,11 +127,16 @@ private fun Banner(
     }
 }
 
-/** True when the printer itself needs attention: paused, failed, or reporting errors. */
-fun needsAttention(s: PrinterStatus?): Boolean =
-    s != null && (s.jobState == JobState.Paused || s.jobState == JobState.Failed || s.printErrorCode != 0L || s.hms.isNotEmpty())
+/** True when the printer has something to say: paused, failed, an error, or an HMS alert not dismissed. */
+fun needsAttention(s: PrinterStatus?, dismissed: Set<String> = emptySet()): Boolean =
+    s != null && (s.jobState == JobState.Paused || s.jobState == JobState.Failed || s.printErrorCode != 0L ||
+        s.hms.any { it.id !in dismissed })
 
-/** Paused / failed / HMS alerts, with codes linked to Bambu's wiki. */
+/**
+ * Paused / failed / HMS alerts in plain English (Bambu's own texts), linked to the wiki.
+ * Errors and pauses get the amber attention style; notices the printer handled itself
+ * (e.g. an AMS auto-refill) get a calm style and can be dismissed.
+ */
 @Composable
 fun PrinterAlertCard(
     s: PrinterStatus,
@@ -137,28 +144,56 @@ fun PrinterAlertCard(
     onResume: () -> Unit,
     onStop: () -> Unit,
     modifier: Modifier = Modifier,
+    dismissed: Set<String> = emptySet(),
+    onDismiss: (Set<String>) -> Unit = {},
 ) {
     val t = LocalBambuType.current
     val uri = LocalUriHandler.current
     val paused = s.jobState == JobState.Paused
+    val failed = s.jobState == JobState.Failed
+    val alerts = s.hms.filter { it.id !in dismissed }
+    val serious = paused || failed || s.printErrorCode != 0L || alerts.any { it.level.isError }
+    val border = if (serious) Color(0xFF4A3A1C) else Palette.outline
     Column(
         modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Palette.card)
-            .border(1.dp, Color(0xFF4A3A1C), RoundedCornerShape(20.dp)).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .border(1.dp, border, RoundedCornerShape(20.dp)).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(if (paused) "PAUSED" else if (s.jobState == JobState.Failed) "FAILED" else "ATTENTION", style = t.eyebrow, color = Palette.amber)
-        Text(
-            s.stage?.takeIf { it.isPause }?.label ?: if (paused) "Paused" else Format.phase(s),
-            style = t.jobName.copy(fontWeight = FontWeight.SemiBold), color = Palette.text,
-        )
-        s.printError?.let { Text("Print error $it", style = t.mono, color = Palette.muted) }
-        s.hms.forEach { alert ->
-            Text(
-                buildAnnotatedString { withStyle(SpanStyle(color = Palette.blue)) { append("HMS ${alert.id} ↗") } },
-                style = t.mono,
-                modifier = Modifier.heightIn(min = 32.dp).padding(vertical = 6.dp)
-                    .selectable(selected = false, role = Role.Button, onClick = { uri.openUri(alert.wikiUrl) }),
-            )
+        val eyebrow = when {
+            paused -> "PAUSED"
+            failed -> "FAILED"
+            serious -> "PRINTER ERROR"
+            else -> "NOTICE"
+        }
+        Text(eyebrow, style = t.eyebrow, color = if (serious) Palette.amber else Palette.blue)
+        when {
+            paused -> Text(s.stage?.takeIf { it.isPause }?.label ?: "Paused", style = t.jobName, color = Palette.text)
+            failed -> Text(Format.phase(s), style = t.jobName, color = Palette.text)
+        }
+        s.printError?.let { code ->
+            val text = HmsCatalog.describeError(s.printErrorCode)
+            Text(text ?: "Print error $code", style = t.body, color = Palette.text)
+        }
+        alerts.forEach { alert ->
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(HmsCatalog.describe(alert), style = t.body, color = Palette.text)
+                Text(
+                    buildAnnotatedString { withStyle(SpanStyle(color = Palette.blue)) { append("HMS ${alert.id} ↗") } },
+                    style = t.mono,
+                    modifier = Modifier.heightIn(min = 32.dp).padding(vertical = 6.dp)
+                        .selectable(selected = false, role = Role.Button, onClick = { uri.openUri(alert.wikiUrl) }),
+                )
+            }
+        }
+        // After an AMS auto-refill, say where the filament comes from now.
+        if (!serious && s.jobState == JobState.Running && alerts.any { (it.attr ushr 24).toInt() == 0x07 }) {
+            val tray = s.ams.flatMap { it.trays }.firstOrNull { it.slot == s.activeSlot }
+            if (tray != null) {
+                Text(
+                    "Now feeding slot ${tray.slot % 4 + 1}" + listOfNotNull(tray.name ?: tray.material).joinToString(prefix = " · ") + " · print continues",
+                    style = t.label, color = Palette.blue,
+                )
+            }
         }
         if (paused) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -169,6 +204,8 @@ fun PrinterAlertCard(
                     Glyph(R.drawable.ic_stop, Palette.danger, 14.dp)
                 }
             }
+        } else if (!serious && alerts.isNotEmpty()) {
+            ControlButton("Dismiss", ControlStyle.Secondary, { onDismiss(alerts.map { it.id }.toSet()) }, Modifier.fillMaxWidth(), minHeight = 44.dp) {}
         }
     }
 }

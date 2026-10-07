@@ -43,7 +43,7 @@ import kotlinx.coroutines.withContext
 
 /** Home-screen widget: current job, progress, time left and a recent chamber frame. */
 class PrinterWidget : GlanceAppWidget() {
-    override val sizeMode = SizeMode.Responsive(setOf(SMALL, WIDE, TALL))
+    override val sizeMode = SizeMode.Responsive(setOf(ROW_NARROW, ROW, ROW_WIDE, SMALL, WIDE, TALL))
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val state = withContext(Dispatchers.IO) { WidgetStore.read(context) }
@@ -52,7 +52,11 @@ class PrinterWidget : GlanceAppWidget() {
     }
 
     private companion object {
-        val SMALL = DpSize(120.dp, 80.dp)
+        // One home-screen row is ~50-70 dp tall: these get the single-line layout.
+        val ROW_NARROW = DpSize(110.dp, 48.dp)
+        val ROW = DpSize(200.dp, 48.dp)
+        val ROW_WIDE = DpSize(300.dp, 48.dp)
+        val SMALL = DpSize(120.dp, 100.dp)
         val WIDE = DpSize(250.dp, 110.dp)
         val TALL = DpSize(250.dp, 220.dp)
     }
@@ -72,15 +76,19 @@ private val Amber = Color(0xFFF4B04A)
 @Composable
 private fun WidgetContent(state: WidgetState?, frame: Bitmap?) {
     val size = LocalSize.current
+    val oneRow = size.height < 100.dp
     Column(
-        GlanceModifier.fillMaxSize().background(Ground).cornerRadius(24.dp).padding(12.dp)
+        GlanceModifier.fillMaxSize().background(Ground).cornerRadius(24.dp)
+            .padding(horizontal = 12.dp, vertical = if (oneRow) 6.dp else 12.dp)
             .clickable(actionStartActivity<MainActivity>()),
+        verticalAlignment = if (oneRow) Alignment.CenterVertically else Alignment.Top,
     ) {
         if (state == null) {
-            Text("Open Bambumon to connect", style = TextStyle(color = ColorProvider(Muted), fontSize = 13.sp))
+            Text("Open Bambumon to connect", style = TextStyle(color = ColorProvider(Muted), fontSize = 13.sp), maxLines = 1)
             return@Column
         }
         when {
+            oneRow -> OneRow(state, frame, size.width)
             size.height >= 200.dp -> {
                 frame?.let {
                     Image(
@@ -133,4 +141,43 @@ private fun Details(s: WidgetState, compact: Boolean) {
         add("as of ${Format.clockTime(s.reportAtMs)}")
     }.joinToString(" · ")
     Text(line, style = TextStyle(color = ColorProvider(Muted), fontSize = 11.sp), maxLines = 1)
+}
+
+/** Single home-screen row: everything on one line, details stacked tightly beside the percent. */
+@Composable
+private fun OneRow(s: WidgetState, frame: Bitmap?, width: androidx.compose.ui.unit.Dp) {
+    val accent = if (s.active) Amber else Muted
+    Row(GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+        if (frame != null && width >= 300.dp) {
+            Image(
+                ImageProvider(frame), "Chamber camera",
+                GlanceModifier.width(64.dp).fillMaxHeight().cornerRadius(10.dp),
+                contentScale = ContentScale.Crop,
+            )
+            Spacer(GlanceModifier.width(10.dp))
+        }
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(s.percent?.toString() ?: "—", style = TextStyle(color = ColorProvider(TextMain), fontSize = 22.sp, fontWeight = FontWeight.Medium))
+            Text("%", style = TextStyle(color = ColorProvider(Muted), fontSize = 12.sp))
+        }
+        Spacer(GlanceModifier.width(10.dp))
+        Column(GlanceModifier.defaultWeight(), verticalAlignment = Alignment.CenterVertically) {
+            if (width >= 200.dp) {
+                Text(
+                    s.jobName ?: s.phase,
+                    style = TextStyle(color = ColorProvider(TextMain), fontSize = 12.sp, fontWeight = FontWeight.Medium),
+                    maxLines = 1,
+                )
+            }
+            LinearProgressIndicator(
+                progress = (s.percent ?: 0) / 100f,
+                modifier = GlanceModifier.fillMaxWidth().height(4.dp),
+                color = ColorProvider(accent),
+                backgroundColor = ColorProvider(Track),
+            )
+            val line = s.remainingMinutes?.let { "${Format.duration(it)} left" + if (width >= 200.dp) " · ${Format.clockTime(s.reportAtMs)}" else "" }
+                ?: s.phase
+            Text(line, style = TextStyle(color = ColorProvider(Muted), fontSize = 10.sp), maxLines = 1)
+        }
+    }
 }

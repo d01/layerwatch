@@ -5,26 +5,25 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.bambumon.ui.AppViewModel
-import app.bambumon.ui.CameraScreen
-import app.bambumon.ui.ConfigState
+import app.bambumon.ui.Screen
 import app.bambumon.ui.SetupScreen
+import app.bambumon.ui.dashboard.DashboardScreen
+import app.bambumon.ui.theme.BambumonTheme
+import app.bambumon.ui.theme.Palette
 
 class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels()
@@ -34,20 +33,27 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         requestLocalNetworkAccess()
         setContent {
-            val context = LocalContext.current
-            val colors = if (isSystemInDarkTheme()) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-            MaterialTheme(colorScheme = colors) {
-                Surface(Modifier.fillMaxSize()) {
-                    val config by vm.config.collectAsStateWithLifecycle()
-                    val setup by vm.setup.collectAsStateWithLifecycle()
-                    when (val c = config) {
-                        ConfigState.Loading -> Box(Modifier.fillMaxSize())
-                        ConfigState.Missing -> SetupScreen(setup, vm::connect)
-                        is ConfigState.Ready -> CameraScreen(c.config, vm.tls, vm::forgetPrinter)
+            BambumonTheme {
+                val screen by vm.screen.collectAsStateWithLifecycle()
+                val setup by vm.setup.collectAsStateWithLifecycle()
+                when (val s = screen) {
+                    Screen.Loading -> Box(Modifier.fillMaxSize().background(Palette.ground))
+                    is Screen.Setup -> {
+                        val updating = s.prefillHost != null
+                        if (updating) BackHandler(onBack = vm::cancelUpdate)
+                        SetupScreen(setup, s.prefillHost, vm::connect, if (updating) vm::cancelUpdate else null)
                     }
+                    is Screen.Dashboard -> DashboardScreen(
+                        s.config, vm.tls,
+                        onForget = vm::forgetPrinter,
+                        onUpdateCode = vm::beginUpdateAccessCode,
+                    )
                 }
             }
         }

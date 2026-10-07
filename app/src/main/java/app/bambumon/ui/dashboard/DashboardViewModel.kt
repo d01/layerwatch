@@ -35,10 +35,7 @@ data class DashboardState(
     val nowMs: Long,
     /** Optimistic value while a light command is in flight. */
     val chamberLightOn: Boolean?,
-    /**
-     * Pause / resume / stop / speed. v1 is monitor-only (plus the light), so these render
-     * disabled until switched on; the hold-to-confirm controls are built either way.
-     */
+    /** Pause / resume / stop / speed. Each sits behind its own 4 s hold (resume is a tap). */
     val jobControlEnabled: Boolean,
     /** Seconds left in the speed-change window opened by the 4 s unlock hold; 0 = locked. */
     val speedUnlockSec: Long = 0,
@@ -125,6 +122,6 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
     private companion object {
         const val LIGHT_PENDING_MS = 5_000L
         const val SPEED_UNLOCK_MS = 20_000L
-        const val JOB_CONTROL_ENABLED = false
+        const val JOB_CONTROL_ENABLED = true
     }
 }

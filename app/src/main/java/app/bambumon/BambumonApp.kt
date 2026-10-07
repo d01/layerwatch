@@ -4,6 +4,7 @@ import android.app.Application
 import app.bambumon.config.AppSettings
 import app.bambumon.config.PrinterConfigStore
 import app.bambumon.history.PrintHistory
+import app.bambumon.history.Timelapses
 import app.bambumon.job.JobRepository
 import app.bambumon.printer.NetworkMonitor
 import app.bambumon.printer.PrinterRepository
@@ -24,6 +25,7 @@ class BambumonApp : Application() {
     val settings by lazy { AppSettings(this) }
     val history by lazy { PrintHistory(File(filesDir, "history")) }
     val jobs by lazy { JobRepository(appScope, printer, tls, File(cacheDir, "jobs")) }
+    val timelapses by lazy { Timelapses(printer, tls, File(filesDir, "history"), File(cacheDir, "timelapse")) }
     val tls by lazy { PrinterTls(this) }
     val printer by lazy { PrinterRepository(appScope, configStore, tls, NetworkMonitor(this)) }
 

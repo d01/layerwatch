@@ -65,7 +65,7 @@ object FilamentForecast {
         return PI * (d / 2) * (d / 2) * density / 1000.0 // mm³ · g/cm³ → g
     }
 
-    internal fun amsSlot(tool: Int, usedTools: List<Int>, mapping: List<Int>): Int? {
+    fun amsSlot(tool: Int, usedTools: List<Int>, mapping: List<Int>): Int? {
         val raw = when {
             tool < mapping.size && mapping.size > usedTools.size -> mapping[tool]
             mapping.size == usedTools.size -> mapping.getOrNull(usedTools.indexOf(tool))

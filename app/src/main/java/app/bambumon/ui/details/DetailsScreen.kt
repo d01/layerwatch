@@ -153,6 +153,7 @@ private fun Wide(state: DetailsState, job: JobFile, images: JobImages) {
             job.gcode?.let { ComingUpCard(upcoming(it, state.currentLayer), Modifier.fillMaxWidth()) }
             FilamentCard(state.filament, job, state.status, Modifier.fillMaxWidth())
             SlicingCard(job, images.render, Modifier.fillMaxWidth(), full = true)
+            ObjectsCard(job, images.top, Modifier.fillMaxWidth())
         }
     }
 }
@@ -170,6 +171,7 @@ private fun Narrow(state: DetailsState, job: JobFile, images: JobImages) {
         }
         job.gcode?.let { ComingUpCard(upcoming(it, state.currentLayer), Modifier.fillMaxWidth()) }
         SlicingCard(job, images.render, Modifier.fillMaxWidth(), full = true)
+        ObjectsCard(job, images.top, Modifier.fillMaxWidth())
     }
 }
 

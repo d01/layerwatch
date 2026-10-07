@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -81,6 +83,7 @@ fun JobCard(
     live: Boolean,
     modifier: Modifier = Modifier,
     heroSize: Int = 64,
+    onDetails: (() -> Unit)? = null,
 ) {
     val t = LocalBambuType.current
     val accent = if (live) Palette.amber else Palette.muted
@@ -90,6 +93,7 @@ fun JobCard(
                 Text((s?.let(Format::phase) ?: "Waiting for printer").uppercase(), style = t.eyebrow, color = accent)
                 Text(s?.jobName ?: "—", style = t.jobName, color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            if (onDetails != null && s?.jobState?.isActive == true) DetailsLink(onDetails)
         }
         Row(verticalAlignment = Alignment.Bottom) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.Bottom) {
@@ -124,6 +128,18 @@ fun JobCard(
             )
         }
     }
+}
+
+/** "Details ›" — opens the print details screen. */
+@Composable
+fun DetailsLink(onClick: () -> Unit) {
+    val t = LocalBambuType.current
+    Box(
+        Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp))
+            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "Print details", onClick = onClick)
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) { Text("Details ›", style = t.label.copy(fontWeight = FontWeight.SemiBold), color = Palette.blue) }
 }
 
 // ---------- temperatures ----------

@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.bambumon.BambumonApp
+import app.bambumon.monitor.PrintMonitorService
 import app.bambumon.printer.NetworkState
 import app.bambumon.protocol.LinkState
 import app.bambumon.protocol.PrinterStatus
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -76,6 +78,29 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope, SharingStarted.WhileSubscribed(5_000),
         DashboardState(Health.Connecting, false, null, null, System.currentTimeMillis(), null, JOB_CONTROL_ENABLED),
     )
+
+    val watchInBackground: StateFlow<Boolean> = (app as BambumonApp).settings.watchInBackground
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    fun setWatchInBackground(on: Boolean) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            (ctx as BambumonApp).settings.setWatchInBackground(on)
+            if (!on) PrintMonitorService.stop(ctx) else if (repo.status.value?.jobState?.isActive == true) PrintMonitorService.start(ctx)
+        }
+    }
+
+    /**
+     * Called by the visible dashboard when it sees a print in progress: hand the print to
+     * the background monitor so it's followed after the app closes. Starting a foreground
+     * service is only allowed while visible, which is exactly when this runs.
+     */
+    fun printSeenWhileOpen() {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            if ((ctx as BambumonApp).settings.watchInBackground.first()) PrintMonitorService.start(ctx)
+        }
+    }
 
     /** Keep the printer connection open while the dashboard is on screen. */
     fun acquireConnection(): () -> Unit = repo.acquire()

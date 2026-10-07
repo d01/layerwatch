@@ -51,6 +51,7 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.exoplayer.rtsp)
     implementation(libs.media3.ui)
+    implementation(libs.media3.inspector.frame)
 
     testImplementation(libs.junit)
 }

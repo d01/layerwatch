@@ -57,7 +57,12 @@ data class Tray(
     val colorHex: String?,
     /** Estimated percent remaining, or null when the AMS can't tell (non-Bambu spool). */
     val remainingPercent: Int?,
-)
+    /** Full spool net weight in grams (`tray_weight`), when the RFID tag says. */
+    val spoolWeightG: Int?,
+) {
+    /** Estimated grams left on the spool, when both remaining % and spool weight are known. */
+    val remainingG: Double? get() = if (remainingPercent != null && spoolWeightG != null) spoolWeightG * remainingPercent / 100.0 else null
+}
 
 data class AmsUnit(
     val id: Int,
@@ -96,6 +101,8 @@ data class PrinterStatus(
     val activeSlot: Int?,
     val wifiDbm: Int?,
     val nozzleDiameter: String?,
+    /** AMS slot (global, amsId*4+tray) feeding each of the job's filaments, from `mapping`. */
+    val amsMapping: List<Int>,
 ) {
     val printError: String? get() =
         printErrorCode.takeIf { it != 0L }?.let { "%08X".format(it).chunked(4).joinToString("_") }
@@ -134,6 +141,7 @@ data class PrinterStatus(
             activeSlot = p.path("ams", "tray_now").int()?.takeIf { it in 0..253 },
             wifiDbm = p.str("wifi_signal")?.removeSuffix("dBm")?.toIntOrNull(),
             nozzleDiameter = p.str("nozzle_diameter"),
+            amsMapping = (p["mapping"] as? JsonArray).orEmpty().mapNotNull { it.int() },
         )
 
         /** Fan speeds arrive as "0".."15" (gear steps); the app and printer screen show percent. */
@@ -155,6 +163,7 @@ data class PrinterStatus(
                             name = t.str("tray_sub_brands")?.takeIf { it.isNotBlank() },
                             colorHex = t.str("tray_color")?.takeIf { it.isNotBlank() },
                             remainingPercent = t.int("remain")?.takeIf { it in 0..100 },
+                            spoolWeightG = t.int("tray_weight")?.takeIf { it > 0 },
                         )
                     },
                 )

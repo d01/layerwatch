@@ -45,4 +45,18 @@ class PrintHistoryTest {
         assertEquals("task-7", PrintHistory.keyFor("7", "x", 5))
         assertEquals("job-x-5", PrintHistory.keyFor(null, "x", 5))
     }
+
+    @Test fun reconcileClosesEntriesWhosePrintEnded() = runBlocking {
+        val h = PrintHistory(tmp.root)
+        h.begin("task-7", "a", null, 1)
+        h.begin("task-83", "b", null, 2)
+        h.begin("task-84", "c", null, 3)
+        // Printer now reports task-83 finished; task-84 is running.
+        h.reconcile(activeKey = "task-84", reportedKey = "task-83", reportedOutcome = Outcome.Finished, nowMs = 9)
+        val byKey = h.records.value.associateBy { it.key }
+        assertEquals(Outcome.Unknown, byKey["task-7"]!!.outcome) // ended unseen
+        assertEquals(Outcome.Finished, byKey["task-83"]!!.outcome)
+        assertEquals(Outcome.InProgress, byKey["task-84"]!!.outcome)
+        assertEquals(9L, byKey["task-83"]!!.endedAtMs)
+    }
 }

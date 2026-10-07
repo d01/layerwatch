@@ -225,15 +225,15 @@ fun SpeedPicker(current: SpeedLevel?, enabled: Boolean, onPick: (SpeedLevel) -> 
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Speed", style = t.label, color = Palette.muted)
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Palette.well).padding(4.dp).selectableGroup()
-                .alpha(if (enabled) 1f else 0.7f),
+            // No Modifier.alpha inside the clipped background: see ControlColors in Controls.kt.
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Palette.well).padding(4.dp).selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             SpeedLevel.entries.forEach { level ->
                 val selected = level == current
                 Box(
                     Modifier.weight(1f).heightIn(min = 44.dp).clip(RoundedCornerShape(10.dp))
-                        .background(if (selected) Palette.outline else Color.Transparent)
+                        .background(if (selected) (if (enabled) Palette.outline else Palette.cardRaised) else Color.Transparent)
                         .selectable(selected = selected, enabled = enabled, role = Role.RadioButton) { onPick(level) },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -242,7 +242,11 @@ fun SpeedPicker(current: SpeedLevel?, enabled: Boolean, onPick: (SpeedLevel) -> 
                         level.label,
                         style = t.label.copy(
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                            color = if (selected) Palette.text else Palette.muted,
+                            color = when {
+                                selected && enabled -> Palette.text
+                                selected -> Palette.muted
+                                else -> Palette.faint
+                            },
                         ),
                         maxLines = 1,
                         autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = t.label.fontSize),

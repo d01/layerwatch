@@ -24,9 +24,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -51,6 +51,22 @@ enum class ControlStyle(val bg: Color, val fg: Color, val border: Color?, val ca
 
 private val ControlShape = RoundedCornerShape(18.dp)
 
+/**
+ * Resolved colors for a button. Disabled is expressed in the colors themselves rather
+ * than with Modifier.alpha: a graphics layer nested inside the clipped background lost
+ * the button's own background and border after the app returned from the background.
+ */
+private data class ControlColors(val bg: Color, val fg: Color, val border: Color?, val caption: Color)
+
+private fun ControlStyle.colors(enabled: Boolean): ControlColors =
+    if (enabled) ControlColors(bg, fg, border, caption)
+    else ControlColors(
+        bg = lerp(bg, Palette.ground, 0.55f),
+        fg = fg.copy(alpha = 0.45f),
+        border = border?.let { lerp(it, Palette.ground, 0.5f) },
+        caption = caption.copy(alpha = 0.45f),
+    )
+
 /** A plain tap button in the dashboard's style. */
 @Composable
 fun ControlButton(
@@ -65,18 +81,18 @@ fun ControlButton(
     icon: @Composable () -> Unit,
 ) {
     val t = LocalBambuType.current
+    val c = style.colors(enabled)
     Box(
         modifier
             .heightIn(min = minHeight)
             .clip(ControlShape)
-            .background(style.bg)
-            .then(style.border?.let { Modifier.border(1.dp, it, ControlShape) } ?: Modifier)
+            .background(c.bg)
+            .then(c.border?.let { Modifier.border(1.dp, it, ControlShape) } ?: Modifier)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .semantics { stateDescription?.let { this.stateDescription = it } }
-            .alpha(if (enabled) 1f else 0.45f),
+            .semantics { stateDescription?.let { this.stateDescription = it } },
         contentAlignment = Alignment.Center,
     ) {
-        ButtonContent(label, null, style, stacked, icon, t.button)
+        ButtonContent(label, null, c, stacked, icon, t.button)
     }
 }
 
@@ -103,13 +119,14 @@ fun HoldToConfirmButton(
     val haptics = LocalHapticFeedback.current
     val confirm by rememberUpdatedState(onConfirm)
     val seconds = holdMillis / 1000
+    val c = style.colors(enabled)
 
     Box(
         modifier
             .heightIn(min = minHeight)
             .clip(ControlShape)
-            .background(style.bg)
-            .then(style.border?.let { Modifier.border(1.dp, it, ControlShape) } ?: Modifier)
+            .background(c.bg)
+            .then(c.border?.let { Modifier.border(1.dp, it, ControlShape) } ?: Modifier)
             .semantics {
                 role = Role.Button
                 contentDescription = "$label. Press and hold for $seconds seconds."
@@ -132,8 +149,7 @@ fun HoldToConfirmButton(
                         scope.launch { progress.animateTo(0f, tween(250)) }
                     }
                 })
-            }
-            .alpha(if (enabled) 1f else 0.45f),
+            },
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -147,7 +163,7 @@ fun HoldToConfirmButton(
         ButtonContent(
             label = if (holding) "Keep holding…" else label,
             caption = if (holding) null else "hold $seconds s",
-            style = style, stacked = stacked, icon = icon, textStyle = t.button,
+            colors = c, stacked = stacked, icon = icon, textStyle = t.button,
         )
     }
 }
@@ -156,7 +172,7 @@ fun HoldToConfirmButton(
 private fun ButtonContent(
     label: String,
     caption: String?,
-    style: ControlStyle,
+    colors: ControlColors,
     stacked: Boolean,
     icon: @Composable () -> Unit,
     textStyle: androidx.compose.ui.text.TextStyle,
@@ -169,16 +185,16 @@ private fun ButtonContent(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
         ) {
             icon()
-            Text(label, style = textStyle, color = style.fg, maxLines = 1)
-            caption?.let { Text(it, style = t.tiny, color = style.caption) }
+            Text(label, style = textStyle, color = colors.fg, maxLines = 1)
+            caption?.let { Text(it, style = t.tiny, color = colors.caption) }
         }
     } else {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 icon()
-                Text(label, style = textStyle, color = style.fg, maxLines = 1)
+                Text(label, style = textStyle, color = colors.fg, maxLines = 1)
             }
-            caption?.let { Text(it, style = t.tiny, color = style.caption) }
+            caption?.let { Text(it, style = t.tiny, color = colors.caption) }
         }
     }
 }

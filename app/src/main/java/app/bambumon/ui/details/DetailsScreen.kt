@@ -27,7 +27,11 @@ import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -143,9 +147,10 @@ private fun LoadingOrUnavailable(load: JobLoad, onRetry: () -> Unit) {
 @Composable
 private fun Wide(state: DetailsState, job: JobFile, images: JobImages) {
     Row(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        BuildPanel(state, job, images, Modifier.weight(1.22f).fillMaxHeight())
+        BuildPanel(state, job, images, Modifier.weight(1.22f).fillMaxHeight(), fill = true)
         Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ScheduleCard(state.schedule, Modifier.fillMaxWidth())
+            job.gcode?.let { ComingUpCard(upcoming(it, state.currentLayer), Modifier.fillMaxWidth()) }
             FilamentCard(state.filament, job, state.status, Modifier.fillMaxWidth())
             SlicingCard(job, images.render, Modifier.fillMaxWidth(), full = true)
         }
@@ -158,21 +163,74 @@ private fun Narrow(state: DetailsState, job: JobFile, images: JobImages) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        BuildPanel(state, job, images, Modifier.fillMaxWidth().aspectRatio(0.86f))
+        BuildPanel(state, job, images, Modifier.fillMaxWidth(), fill = false)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ScheduleCard(state.schedule, Modifier.weight(1f), compact = true)
             FilamentCard(state.filament, job, state.status, Modifier.weight(1f), compact = true)
         }
+        job.gcode?.let { ComingUpCard(upcoming(it, state.currentLayer), Modifier.fillMaxWidth()) }
         SlicingCard(job, images.render, Modifier.fillMaxWidth(), full = true)
     }
 }
 
-/** Build view panel. Phases 3–4 put the layer and 3D views here; for now, the slicer's render. */
+/**
+ * Build view panel: 3D build (phase 4; the slicer render until then) or the current
+ * layer from the top, with a scrubber that follows the printing layer until moved.
+ */
 @Composable
-private fun BuildPanel(state: DetailsState, job: JobFile, images: JobImages, modifier: Modifier) {
-    Panel(modifier, padding = 14.dp) {
-        Box(Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(Palette.ground), contentAlignment = Alignment.Center) {
-            images.render?.let { Image(it, "Slicer render of the plate", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
+private fun BuildPanel(state: DetailsState, job: JobFile, images: JobImages, modifier: Modifier, fill: Boolean) {
+    val t = LocalBambuType.current
+    val model = job.gcode
+    var mode by rememberSaveable { mutableStateOf(if (model != null) "Layer" else "3D build") }
+    var pinned by rememberSaveable { mutableStateOf<Int?>(null) } // null = follow live
+    val total = model?.layers?.size ?: 0
+    val live = state.currentLayer.coerceIn(1, total.coerceAtLeast(1))
+    val layer = (pinned ?: live).coerceIn(1, total.coerceAtLeast(1))
+    val paths = remember(model) { model?.let(::LayerPaths) }
+
+    Panel(modifier, padding = 14.dp, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Segmented(listOf("3D build", "Layer"), mode, { mode = it })
+        val viewModifier = if (fill) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth().aspectRatio(viewAspect(model))
+        Box(viewModifier.clip(RoundedCornerShape(16.dp)).background(Palette.ground), contentAlignment = Alignment.Center) {
+            if (mode == "Layer" && model != null && paths != null) {
+                LayerCanvas(model, paths, layer, Modifier.fillMaxSize())
+            } else {
+                images.render?.let { Image(it, "Slicer render of the plate", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
+            }
+        }
+        if (model != null) {
+            if (mode == "Layer") FeatureLegend(model.layer(layer)?.features.orEmpty())
+            LayerScrubber(
+                layer = layer, liveLayer = live, total = total, following = pinned == null,
+                onLayer = { pinned = it.takeIf { l -> l != live } }, onLive = { pinned = null },
+                z = model.layer(layer)?.z,
+            )
+        }
+    }
+}
+
+private fun viewAspect(model: app.bambumon.protocol.job.GcodeModel?): Float {
+    val b = model?.bounds ?: return 1f
+    val w = b[2] - b[0]
+    val h = b[3] - b[1]
+    return if (w > 0 && h > 0) (w / h).coerceIn(0.8f, 1.8f) else 1f
+}
+
+@Composable
+private fun Segmented(options: List<String>, selected: String, onSelect: (String) -> Unit) {
+    val t = LocalBambuType.current
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Palette.well).padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        options.forEach { o ->
+            val on = o == selected
+            Box(
+                Modifier.weight(1f).heightIn(min = 40.dp).clip(RoundedCornerShape(10.dp))
+                    .background(if (on) Palette.outline else androidx.compose.ui.graphics.Color.Transparent)
+                    .selectable(selected = on, role = Role.Tab, onClick = { onSelect(o) }),
+                contentAlignment = Alignment.Center,
+            ) { Text(o, style = t.label, color = if (on) Palette.text else Palette.muted) }
         }
     }
 }

@@ -52,11 +52,12 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
 @Composable
-fun HistoryScreen(records: List<PrintRecord>, history: PrintHistory, onBack: () -> Unit) {
+fun HistoryScreen(records: List<PrintRecord>, history: PrintHistory, onBack: () -> Unit, initialOpen: String? = null) {
     val t = LocalBambuType.current
-    var open by rememberSaveable { mutableStateOf<String?>(null) }
+    var open by rememberSaveable { mutableStateOf(initialOpen) }
     records.firstOrNull { it.key == open }?.let { r ->
-        HistoryEntryScreen(r, onBack = { open = null })
+        // Opened straight from the dashboard: back goes back there, not to the list.
+        HistoryEntryScreen(r, onBack = { if (initialOpen != null && open == initialOpen) onBack() else open = null })
         return
     }
     BackHandler(onBack = onBack)

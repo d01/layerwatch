@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.layerwatch.LayerwatchApp
+import app.layerwatch.history.Outcome
+import app.layerwatch.history.PrintRecord
 import app.layerwatch.monitor.PrintMonitorService
 import app.layerwatch.printer.NetworkState
 import app.layerwatch.protocol.LinkState
@@ -16,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -49,6 +52,11 @@ data class DashboardState(
 class DashboardViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = (app as LayerwatchApp).printer
     val history = (app as LayerwatchApp).history
+
+    /** The most recent print that's no longer running, for the idle card. */
+    val lastPrint: StateFlow<PrintRecord?> = history.records
+        .map { list -> list.firstOrNull { it.outcome != Outcome.InProgress } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private val pendingLight = MutableStateFlow<Pair<Boolean, Long>?>(null)
     private val speedUnlockedUntil = MutableStateFlow(0L)
 

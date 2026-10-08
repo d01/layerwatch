@@ -117,6 +117,12 @@ private fun WidgetContent(state: WidgetState?, frame: Bitmap?) {
 @Composable
 private fun Details(s: WidgetState, compact: Boolean) {
     val accent = if (s.active) Amber else Muted
+    if (s.phase == "Ready") {
+        Text(s.model, style = TextStyle(color = ColorProvider(Muted), fontSize = 11.sp), maxLines = 1)
+        Text("Ready", style = TextStyle(color = ColorProvider(TextMain), fontSize = if (compact) 22.sp else 26.sp, fontWeight = FontWeight.Medium))
+        Text("as of ${Format.clockTime(s.reportAtMs)}", style = TextStyle(color = ColorProvider(Muted), fontSize = 11.sp), maxLines = 1)
+        return
+    }
     if (!compact) {
         Text(
             "${s.model} · ${s.phase}",
@@ -147,6 +153,14 @@ private fun Details(s: WidgetState, compact: Boolean) {
 @Composable
 private fun OneRow(s: WidgetState, frame: Bitmap?, width: androidx.compose.ui.unit.Dp) {
     val accent = if (s.active) Amber else Muted
+    if (s.phase == "Ready") {
+        Row(GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Ready", style = TextStyle(color = ColorProvider(TextMain), fontSize = 18.sp, fontWeight = FontWeight.Medium))
+            Spacer(GlanceModifier.width(10.dp))
+            Text("${s.model} · as of ${Format.clockTime(s.reportAtMs)}", style = TextStyle(color = ColorProvider(Muted), fontSize = 11.sp), maxLines = 1)
+        }
+        return
+    }
     Row(GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
         if (frame != null && width >= 300.dp) {
             Image(

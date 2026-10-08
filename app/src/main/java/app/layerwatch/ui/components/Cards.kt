@@ -144,6 +144,62 @@ fun DetailsLink(onClick: () -> Unit) {
     ) { Text("Details ›", style = t.label.copy(fontWeight = FontWeight.SemiBold), color = Palette.blue) }
 }
 
+/** No job on the printer: idle is a state, not a print at 0%. */
+fun isIdle(s: PrinterStatus?): Boolean =
+    s != null && (s.jobState == app.layerwatch.protocol.JobState.Idle ||
+        (s.jobState == app.layerwatch.protocol.JobState.Unknown && s.jobName == null))
+
+/**
+ * Shown instead of the job card when the printer is idle: "Ready", the last print (opens
+ * its history entry), and any AMS drying, which is often the only thing happening.
+ */
+@Composable
+fun ReadyCard(
+    s: PrinterStatus,
+    live: Boolean,
+    lastPrint: app.layerwatch.history.PrintRecord?,
+    onOpenLast: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val t = LocalBambuType.current
+    Panel(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("READY", style = t.eyebrow, color = if (live) Palette.blue else Palette.muted)
+        Text("Idle · ready for the next print", style = t.jobName, color = Palette.text)
+        s.ams.filter { it.isDrying }.forEach { unit ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Dot(Palette.amber, 7.dp)
+                Text(
+                    "${unit.type.label} drying" + (if (unit.dryMinutesLeft > 0) " · ${Format.duration(unit.dryMinutesLeft)} left" else ""),
+                    style = t.label, color = Palette.amberText,
+                )
+            }
+        }
+        lastPrint?.let { r ->
+            val (label, color) = when (r.outcome) {
+                app.layerwatch.history.Outcome.Finished -> "finished" to Palette.blue
+                app.layerwatch.history.Outcome.Failed -> "failed" to Palette.danger
+                else -> "ended" to Palette.muted
+            }
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(12.dp)).background(Palette.cardRaised)
+                    .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "Open last print") { onOpenLast(r.key) }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Last print", style = t.caption, color = Palette.muted)
+                    Text(r.jobName ?: "Untitled print", style = t.label.copy(fontWeight = FontWeight.SemiBold), color = Palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        label + (r.endedAtMs?.let { " · " + Format.clockTime(it) } ?: ""),
+                        style = t.caption, color = color,
+                    )
+                }
+                Text("›", style = t.section, color = Palette.muted)
+            }
+        }
+    }
+}
+
 // ---------- temperatures ----------
 
 private data class TempRow(val label: String, val temp: Temperature?, val chamber: Double?)

@@ -108,5 +108,12 @@ class PrinterStatusTest {
         assertEquals("Not enough power: connect the AMS's 24 V adapter", cannotDryText(1))
         assertEquals(false, s.supportsRemoteDrying) // fun2 0x1000: bit 5 clear, as on an X1C (firmware 01.12)
         assertEquals(true, status("""{"print":{"command":"push_status","fun2":"20"}}""").supportsRemoteDrying)
+
+        // An AMS 2 Pro on an X1C drying, started from the printer's screen (real capture).
+        val mine = status("""{"print":{"command":"push_status","ams":{"ams":[{"id":"0","info":"2023","dry_time":708,"temp":"48.2","humidity_raw":"28","humidity":"1","tray":[]}]}}}""").ams.single()
+        assertEquals(AmsType.Ams2Pro, mine.type)
+        assertEquals(DryStatus.Drying, mine.dryStatus)
+        assertEquals(708, mine.dryMinutesLeft)
+        assertEquals(true, mine.isDrying)
     }
 }

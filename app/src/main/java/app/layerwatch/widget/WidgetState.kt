@@ -32,7 +32,7 @@ data class WidgetState(
         fun from(serial: String, s: PrinterStatus, reportAtMs: Long) = WidgetState(
             model = printerModelName(serial),
             active = s.jobState.isActive,
-            phase = Format.phase(s),
+            phase = if (s.jobState == app.layerwatch.protocol.JobState.Idle) "Ready" else Format.phase(s),
             jobName = s.jobName,
             percent = s.percent,
             remainingMinutes = s.remainingMinutes?.takeIf { s.jobState.isActive },

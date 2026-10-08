@@ -64,6 +64,8 @@ import app.layerwatch.ui.components.TempStrip
 import app.layerwatch.ui.components.TempTiles
 import app.layerwatch.ui.components.WifiNote
 import app.layerwatch.ui.components.needsAttention
+import app.layerwatch.ui.components.ReadyCard
+import app.layerwatch.ui.components.isIdle
 import app.layerwatch.ui.details.DetailsScreen
 import app.layerwatch.ui.history.HistoryScreen
 import app.layerwatch.ui.theme.LocalBambuType
@@ -83,6 +85,8 @@ private class Dash(
 ) {
     val live get() = state.isLive
     var dismissed: Set<String> = emptySet()
+    var lastPrint: app.layerwatch.history.PrintRecord? = null
+    var onOpenRecord: (String) -> Unit = {}
 }
 
 @Composable
@@ -96,6 +100,7 @@ fun DashboardScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     var fullscreen by rememberSaveable { mutableStateOf(false) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
+    var openRecord by rememberSaveable { mutableStateOf<String?>(null) }
     var showDetails by rememberSaveable { mutableStateOf(false) }
 
     // Hold the printer connection open while the dashboard is visible.
@@ -116,7 +121,7 @@ fun DashboardScreen(
 
     if (showHistory) {
         val records by vm.history.records.collectAsStateWithLifecycle()
-        HistoryScreen(records, vm.history, onBack = { showHistory = false })
+        HistoryScreen(records, vm.history, onBack = { showHistory = false; openRecord = null }, initialOpen = openRecord)
         return
     }
 
@@ -133,6 +138,8 @@ fun DashboardScreen(
 
     val d = Dash(state, config, tls, vm, { fullscreen = true }, { showHistory = true }, { showDetails = true }, onForget, onUpdateCode)
     d.dismissed = vm.dismissedHms.collectAsStateWithLifecycle().value
+    d.lastPrint = vm.lastPrint.collectAsStateWithLifecycle().value
+    d.onOpenRecord = { key -> openRecord = key; showHistory = true }
     val info = currentWindowAdaptiveInfo()
     when {
         info.windowPosture.isTabletop -> TabletopLayout(d)
@@ -156,7 +163,8 @@ private fun FoldedLayout(d: Dash) {
         CameraPanel(d.config, d.tls, Modifier.fillMaxWidth().aspectRatio(CameraAspect), onFullscreen = d.onFullscreen)
         if (needsAttention(s, d.dismissed)) PrinterAlertCard(s!!, d.state.jobControlEnabled, d.vm::resume, d.vm::stopPrint, dismissed = d.dismissed, onDismiss = d.vm::dismissHms)
         Column(Modifier.dimWhenStale(d.live), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            JobCard(s, d.state.nowMs, d.live, Modifier.fillMaxWidth(), onDetails = d.onDetails)
+            if (isIdle(s)) ReadyCard(s!!, d.live, d.lastPrint, d.onOpenRecord, Modifier.fillMaxWidth())
+            else JobCard(s, d.state.nowMs, d.live, Modifier.fillMaxWidth(), onDetails = d.onDetails)
             TempTiles(s, d.live, Modifier.fillMaxWidth())
             AmsCard(s, Modifier.fillMaxWidth())
             Panel(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -186,7 +194,8 @@ private fun UnfoldedLayout(d: Dash) {
             HealthBanner(d.state, d.vm::retryNow, d.onUpdateCode)
             CameraPanel(d.config, d.tls, Modifier.fillMaxWidth().aspectRatio(CameraAspect), radius = 22.dp, onFullscreen = d.onFullscreen)
             if (needsAttention(s, d.dismissed)) PrinterAlertCard(s!!, d.state.jobControlEnabled, d.vm::resume, d.vm::stopPrint, dismissed = d.dismissed, onDismiss = d.vm::dismissHms)
-            JobCard(s, d.state.nowMs, d.live, Modifier.fillMaxWidth().dimWhenStale(d.live), heroSize = 72, onDetails = d.onDetails)
+            if (isIdle(s)) ReadyCard(s!!, d.live, d.lastPrint, d.onOpenRecord, Modifier.fillMaxWidth().dimWhenStale(d.live))
+            else JobCard(s, d.state.nowMs, d.live, Modifier.fillMaxWidth().dimWhenStale(d.live), heroSize = 72, onDetails = d.onDetails)
             Controls(d, Modifier.fillMaxWidth())
         }
         Column(
@@ -219,12 +228,20 @@ private fun TabletopLayout(d: Dash) {
             CameraPanel(d.config, d.tls, Modifier.weight(1f).fillMaxHeight(), crop = true, onFullscreen = d.onFullscreen)
             Column(Modifier.width(210.dp).fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text((s?.let(Format::phase) ?: "Waiting").uppercase(), style = t.eyebrow, color = if (d.live) Palette.amber else Palette.muted)
+                    Text((if (isIdle(s)) "Ready" else s?.let(Format::phase) ?: "Waiting").uppercase(), style = t.eyebrow, color = if (d.live) Palette.amber else Palette.muted)
                     Text(s?.jobName ?: "—", style = t.jobName, color = Palette.text, maxLines = 2)
                     LinkChip(d.state, compact = true)
                     if (s?.jobState?.isActive == true) app.layerwatch.ui.components.DetailsLink(d.onDetails)
                 }
-                Column(Modifier.dimWhenStale(d.live), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (isIdle(s)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Ready", style = t.heroNumber.copy(fontSize = t.heroNumber.fontSize * 0.7f, lineHeight = t.heroNumber.fontSize * 0.7f), color = Palette.text)
+                        s!!.ams.firstOrNull { it.isDrying }?.let { u ->
+                            Text("${u.type.label} drying · ${Format.duration(u.dryMinutesLeft)} left", style = t.label, color = Palette.amberText)
+                        }
+                        d.lastPrint?.let { r -> Text("Last: ${r.jobName ?: "print"}", style = t.label, color = Palette.muted, maxLines = 1) }
+                    }
+                } else Column(Modifier.dimWhenStale(d.live), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(s?.percent?.toString() ?: "—", style = t.heroNumber.copy(fontSize = t.heroNumber.fontSize * 1.3f, lineHeight = t.heroNumber.fontSize * 1.3f), color = Palette.text)
                         Text("%", style = t.heroUnit, color = Palette.muted, modifier = Modifier.padding(start = 2.dp, bottom = 6.dp))

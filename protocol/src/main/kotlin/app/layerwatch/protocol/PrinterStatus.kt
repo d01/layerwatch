@@ -64,12 +64,57 @@ data class Tray(
     val remainingG: Double? get() = if (remainingPercent != null && spoolWeightG != null) spoolWeightG * remainingPercent / 100.0 else null
 }
 
+/** AMS model, from bits 0–3 of the unit's `info` (Bambu Studio's DevAmsType). */
+enum class AmsType(val label: String, val canDry: Boolean, val maxDryC: Int) {
+    Ams("AMS", false, 0), AmsLite("AMS Lite", false, 0), Ams2Pro("AMS 2 Pro", true, 65), AmsHt("AMS HT", true, 85), Unknown("AMS", false, 0);
+
+    companion object {
+        fun of(code: Int) = when (code) { 1 -> Ams; 2 -> AmsLite; 3 -> Ams2Pro; 4 -> AmsHt; else -> Unknown }
+    }
+}
+
+/** Drying state, from bits 4–7 of `info` (Bambu Studio's DryStatus). */
+enum class DryStatus(val label: String) {
+    Off("Off"), Checking("Starting"), Drying("Drying"), Cooling("Cooling"), Stopping("Stopping"),
+    Error("Drying error"), HeatOutOfControl("Heater fault"), Testing("Testing"), Unknown("Unknown");
+
+    companion object {
+        fun of(code: Int) = entries.getOrNull(code)?.takeIf { it != Unknown } ?: Unknown
+    }
+}
+
+/**
+ * Why the printer says a unit can't dry right now (`dry_sf_reason`, Bambu Studio's
+ * CannotDryReason). Code 6 ("drying in progress") is informational.
+ */
+fun cannotDryText(code: Int): String? = when (code) {
+    0 -> "The printer is busy with a task"
+    1, 8 -> "Not enough power: connect the AMS's 24 V adapter"
+    2 -> "The AMS is busy"
+    3, 10 -> "Filament is loaded through the AMS outlet: unload it first"
+    4 -> "Drying is starting"
+    5 -> "Not supported in this mode"
+    7 -> "Firmware update in progress"
+    else -> null
+}
+
 data class AmsUnit(
     val id: Int,
     val humidityLevel: Int?,
     val temperatureC: Double?,
     val trays: List<Tray>,
-)
+    val type: AmsType = AmsType.Unknown,
+    val dryStatus: DryStatus = DryStatus.Off,
+    /** Minutes of drying left (`dry_time`); 0 when no timer is running. */
+    val dryMinutesLeft: Int = 0,
+    /** Relative humidity in % (`humidity_raw`), finer than the 1–5 [humidityLevel]. */
+    val humidityPercent: Int? = null,
+    val cannotDryReasons: List<Int> = emptyList(),
+) {
+    /** Bambu Studio's rule, plus a running timer (some firmware leaves the status bits 0). */
+    val isDrying: Boolean get() = dryStatus in setOf(DryStatus.Checking, DryStatus.Drying, DryStatus.Cooling, DryStatus.Error, DryStatus.HeatOutOfControl) ||
+        (dryMinutesLeft in 1..24 * 60 && dryStatus != DryStatus.Stopping)
+}
 
 /** A typed, UI-ready view of the merged `print` report. Every field tolerates absence. */
 data class PrinterStatus(
@@ -103,6 +148,11 @@ data class PrinterStatus(
     val nozzleDiameter: String?,
     /** AMS slot (global, amsId*4+tray) feeding each of the job's filaments, from `mapping`. */
     val amsMapping: List<Int>,
+    /**
+     * The printer advertises remote AMS drying (`fun2` bit 5, as Bambu Studio checks).
+     * False on the X1C as of firmware 01.12; controls should only appear when true.
+     */
+    val supportsRemoteDrying: Boolean = false,
 ) {
     val printError: String? get() =
         printErrorCode.takeIf { it != 0L }?.let { "%08X".format(it).chunked(4).joinToString("_") }
@@ -142,6 +192,7 @@ data class PrinterStatus(
             wifiDbm = p.str("wifi_signal")?.removeSuffix("dBm")?.toIntOrNull(),
             nozzleDiameter = p.str("nozzle_diameter"),
             amsMapping = (p["mapping"] as? JsonArray).orEmpty().mapNotNull { it.int() },
+            supportsRemoteDrying = p.str("fun2")?.toLongOrNull(16)?.let { (it ushr 5) and 1L == 1L } ?: false,
         )
 
         /** Fan speeds arrive as "0".."15" (gear steps); the app and printer screen show percent. */
@@ -151,8 +202,14 @@ data class PrinterStatus(
         private fun parseAms(p: JsonObject): List<AmsUnit> =
             (p.path("ams", "ams") as? JsonArray).orEmpty().filterIsInstance<JsonObject>().mapNotNull { unit ->
                 val id = unit.int("id") ?: return@mapNotNull null
+                val info = unit.str("info")?.toLongOrNull(16) ?: 0L
                 AmsUnit(
                     id = id,
+                    type = AmsType.of((info and 0xF).toInt()),
+                    dryStatus = DryStatus.of(((info ushr 4) and 0xF).toInt()),
+                    dryMinutesLeft = unit.int("dry_time")?.coerceAtLeast(0) ?: 0,
+                    humidityPercent = unit.int("humidity_raw")?.takeIf { it in 0..100 },
+                    cannotDryReasons = (unit["dry_sf_reason"] as? JsonArray).orEmpty().mapNotNull { it.int() },
                     humidityLevel = unit.int("humidity"),
                     temperatureC = unit.dbl("temp"),
                     trays = (unit["tray"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>().mapNotNull { t ->

@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.layerwatch.R
 import app.layerwatch.protocol.AmsUnit
+import app.layerwatch.protocol.DryStatus
+import app.layerwatch.protocol.cannotDryText
 import app.layerwatch.protocol.PrinterStatus
 import app.layerwatch.protocol.Temperature
 import app.layerwatch.protocol.Tray
@@ -241,8 +243,49 @@ fun Spool(tray: Tray, active: Boolean, size: Dp) {
 
 private fun Color.luminance() = 0.2126f * red + 0.7152f * green + 0.0722f * blue
 
-private fun amsSummary(unit: AmsUnit) =
-    listOfNotNull(unit.humidityLevel?.let { "humidity $it/5" }, unit.temperatureC?.let { "%.1f °C".format(it) }).joinToString(" · ")
+private fun amsSummary(unit: AmsUnit) = listOfNotNull(
+    when {
+        unit.humidityPercent != null && unit.humidityLevel != null -> "${unit.humidityPercent}% RH (${unit.humidityLevel}/5)"
+        unit.humidityLevel != null -> "humidity ${unit.humidityLevel}/5"
+        else -> null
+    },
+    unit.temperatureC?.let { "%.1f °C".format(it) },
+).joinToString(" · ")
+
+private fun amsTitle(unit: AmsUnit, many: Boolean) =
+    unit.type.label + if (many) " ${if (unit.id >= 128) "HT ${unit.id - 127}" else ('A' + unit.id).toString()}" else ""
+
+/**
+ * Drying state for AMS units that can dry: "Drying · 9h 43m left · 63.2 °C now" in amber
+ * while it runs (started from the printer's screen; remote start isn't offered on the X1C
+ * yet). Reasons the printer can't dry are shown only around an attempt, since during a
+ * print it always reports itself busy.
+ */
+@Composable
+fun DryingLine(unit: AmsUnit, modifier: Modifier = Modifier) {
+    if (!unit.type.canDry) return
+    val t = LocalBambuType.current
+    val attempting = unit.dryStatus == DryStatus.Checking || unit.dryStatus == DryStatus.Error || unit.dryStatus == DryStatus.HeatOutOfControl
+    if (unit.isDrying) {
+        val parts = buildList {
+            add(if (unit.dryStatus == DryStatus.Off || unit.dryStatus == DryStatus.Unknown) "Drying" else unit.dryStatus.label)
+            if (unit.dryMinutesLeft > 0) add(Format.duration(unit.dryMinutesLeft) + " left")
+            unit.temperatureC?.let { add("%.1f °C now".format(it)) }
+        }
+        Row(
+            modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Palette.amberSoft).padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Dot(Palette.amber, 7.dp)
+            Text(parts.joinToString(" · "), style = t.label, color = Palette.amberText)
+        }
+    }
+    if (attempting) {
+        unit.cannotDryReasons.mapNotNull(::cannotDryText).distinct().forEach {
+            Text("Can't dry: $it", style = t.caption, color = Palette.errorText)
+        }
+    }
+}
 
 /** Four spools in a grid (folded layout). */
 @Composable
@@ -253,9 +296,10 @@ fun AmsCard(s: PrinterStatus?, modifier: Modifier = Modifier) {
     units.forEach { unit ->
         Panel(modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.Bottom) {
-                Text(if (units.size > 1) "AMS ${unit.id + 1}" else "AMS", style = t.section, color = Palette.text, modifier = Modifier.weight(1f))
+                Text(amsTitle(unit, units.size > 1), style = t.section, color = Palette.text, modifier = Modifier.weight(1f))
                 Text(amsSummary(unit), style = t.label, color = Palette.muted)
             }
+            DryingLine(unit)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 unit.trays.forEach { tray ->
                     val active = tray.slot == s?.activeSlot
@@ -280,9 +324,10 @@ fun AmsList(s: PrinterStatus?, modifier: Modifier = Modifier) {
     Panel(modifier, padding = 16.dp, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         units.forEach { unit ->
             Row(verticalAlignment = Alignment.Bottom) {
-                Text(if (units.size > 1) "AMS ${unit.id + 1}" else "AMS", style = t.section, color = Palette.text, modifier = Modifier.weight(1f))
+                Text(amsTitle(unit, units.size > 1), style = t.section, color = Palette.text, modifier = Modifier.weight(1f))
                 Text(amsSummary(unit), style = t.caption, color = Palette.muted)
             }
+            DryingLine(unit)
             unit.trays.forEach { tray ->
                 val active = tray.slot == s?.activeSlot
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -311,8 +356,8 @@ fun AmsStrip(s: PrinterStatus?, modifier: Modifier = Modifier) {
     Panel(modifier, radius = 16.dp, padding = 14.dp) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             Column {
-                Text("AMS", style = t.section, color = Palette.text)
-                Text(amsSummary(unit), style = t.tiny, color = Palette.muted)
+                Text(unit.type.label, style = t.section, color = Palette.text)
+                Text(if (unit.isDrying) "Drying · " + Format.duration(unit.dryMinutesLeft) + " left" else amsSummary(unit), style = t.tiny, color = if (unit.isDrying) Palette.amberText else Palette.muted)
             }
             unit.trays.forEach { tray ->
                 val active = tray.slot == s.activeSlot

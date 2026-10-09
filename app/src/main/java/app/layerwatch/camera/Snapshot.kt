@@ -46,6 +46,7 @@ object Snapshot {
 
     @OptIn(UnstableApi::class)
     suspend fun grab(context: Context, tls: PrinterTls, config: PrinterConfig, timeoutMs: Long = 12_000): Bitmap? {
+        if (config.isDemo) return null // the demo has no camera
         if (viewers.get() > 0) {
             Log.i(TAG, "skipped: camera is on screen")
             return null

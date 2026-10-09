@@ -108,6 +108,11 @@ class PrintHistory(private val dir: File) {
 
     fun snapshot(record: PrintRecord): File? = record.snapshotFile?.let { File(dir, it) }?.takeIf { it.exists() }
 
+    suspend fun deleteWhere(predicate: (PrintRecord) -> Boolean) = edit { list ->
+        list.filter(predicate).forEach { snapshot(it)?.delete() }
+        list.filterNot(predicate)
+    }
+
     suspend fun delete(key: String) = edit { list ->
         list.firstOrNull { it.key == key }?.let { snapshot(it)?.delete() }
         list.filterNot { it.key == key }

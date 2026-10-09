@@ -302,8 +302,8 @@ private fun MoreMenu(d: Dash) {
                 text = { Text(if (watching) "Background watching: on" else "Background watching: off") },
                 onClick = { open = false; d.vm.setWatchInBackground(!watching) },
             )
-            DropdownMenuItem(text = { Text("Change access code") }, onClick = { open = false; d.onUpdateCode() })
-            DropdownMenuItem(text = { Text("Forget printer") }, onClick = { open = false; d.onForget() })
+            if (!d.config.isDemo) DropdownMenuItem(text = { Text("Change access code") }, onClick = { open = false; d.onUpdateCode() })
+            DropdownMenuItem(text = { Text(if (d.config.isDemo) "Leave demo" else "Forget printer") }, onClick = { open = false; d.onForget() })
         }
     }
 }

@@ -147,7 +147,7 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
         command { it.setSpeed(level) }
     }
 
-    private fun command(block: (app.layerwatch.protocol.PrinterConnection) -> Boolean) {
+    private fun command(block: (app.layerwatch.protocol.PrinterLink) -> Boolean) {
         if (!JOB_CONTROL_ENABLED) return
         val conn = repo.connection.value ?: return
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { block(conn) }

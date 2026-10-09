@@ -85,6 +85,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Set up the simulated printer, so the app can be explored without one. */
+    fun startDemo() {
+        viewModelScope.launch {
+            store.save(PrinterConfig.Demo)
+            editing.value = false
+            _setup.value = SetupState.Idle
+        }
+    }
+
     fun beginUpdateAccessCode() {
         _setup.value = SetupState.Idle
         editing.value = true
@@ -95,11 +104,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun forgetPrinter() {
-        viewModelScope.launch { store.clear() }
+        viewModelScope.launch {
+            // Leaving the demo also drops its simulated prints from history.
+            if (graph.printer.config.value?.isDemo == true) graph.history.deleteWhere { it.key.startsWith("task-demo-") }
+            store.clear()
+        }
     }
 
     private fun explain(e: Throwable, host: String): String = when (e) {
-        is MqttAuthException -> "The printer rejected that access code. Check Settings → LAN on the printer."
+        is MqttAuthException -> "The printer rejected that access code. Check it in the printer's network settings, and that LAN Only Mode and Developer Mode are on."
         is UnknownHostException -> "Couldn't find $host."
         is ConnectException, is SocketTimeoutException ->
             "Couldn't reach $host. Check the address, and that the phone is on your network or VPN."

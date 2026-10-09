@@ -54,6 +54,7 @@ class Timelapses(
 
     /** Record the timelapse files that exist as [key] starts. Idempotent. */
     suspend fun snapshotBefore(key: String) = withContext(Dispatchers.IO) {
+        if (printer.config.value?.isDemo == true) return@withContext
         val f = beforeFile(key)
         if (f.exists()) return@withContext
         runCatching {
@@ -65,6 +66,7 @@ class Timelapses(
     }
 
     suspend fun find(key: String): TimelapseRef? = withContext(Dispatchers.IO) {
+        if (printer.config.value?.isDemo == true) return@withContext null
         val now = list()
         val before = beforeFile(key).takeIf { it.exists() }?.readLines()?.toSet()
         if (before != null) {

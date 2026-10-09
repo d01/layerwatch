@@ -20,7 +20,15 @@ data class PrinterConfig(
     val host: String,
     val serial: String,
     val accessCode: String,
-)
+) {
+    /** The simulated printer from "Try the demo", not a real one. */
+    val isDemo: Boolean get() = host == DEMO_HOST
+
+    companion object {
+        const val DEMO_HOST = "demo.layerwatch.invalid"
+        val Demo = PrinterConfig(DEMO_HOST, "DEMO", "demo")
+    }
+}
 
 private val Context.dataStore by preferencesDataStore(name = "printer")
 

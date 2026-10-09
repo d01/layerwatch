@@ -6,6 +6,7 @@ only; the JWT is signed with the openssl CLI.
 
     tools/play-upload.py                      # release AAB -> internal track
     tools/play-upload.py --track alpha --notes "What changed"
+    tools/play-upload.py --track alpha --version-code 5   # release an uploaded build
 
 The key defaults to ~/.android/layerwatch-play-api.json (override with --key or
 LAYERWATCH_PLAY_KEY). Keep it out of the repo.
@@ -79,17 +80,21 @@ def main():
     ap.add_argument("--track", default="internal", help="internal, alpha (closed), beta (open) or production")
     ap.add_argument("--notes", help="release notes (en-US)")
     ap.add_argument("--draft", action="store_true", help="leave the release as a draft in Play Console")
+    ap.add_argument("--version-code", type=int, help="release this already-uploaded build instead of uploading --aab")
     args = ap.parse_args()
 
     with open(args.key) as f:
         token = access_token(json.load(f))
     edit = call("POST", f"{API}/edits", b"{}", token=token)["id"]
 
-    with open(args.aab, "rb") as f:
-        print(f"Uploading {os.path.relpath(args.aab, ROOT)}…")
-        bundle = call("POST", f"{UPLOAD}/edits/{edit}/bundles?uploadType=media", f.read(),
-                      "application/octet-stream", token)
-    code = bundle["versionCode"]
+    if args.version_code:
+        code = args.version_code
+    else:
+        with open(args.aab, "rb") as f:
+            print(f"Uploading {os.path.relpath(args.aab, ROOT)}…")
+            bundle = call("POST", f"{UPLOAD}/edits/{edit}/bundles?uploadType=media", f.read(),
+                          "application/octet-stream", token)
+        code = bundle["versionCode"]
 
     release = {"versionCodes": [str(code)], "status": "draft" if args.draft else "completed"}
     if args.notes:

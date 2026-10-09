@@ -77,17 +77,23 @@ Layerwatch is an independent project, not affiliated with or endorsed by Bambu L
 | Phone screenshots | `screenshots/phone-*.png` |
 | Tablet screenshots (7" and 10") | `screenshots/tablet-*.png` |
 
+AI asset declaration: the icon and feature graphic are labeled "created or edited using AI";
+the screenshots are not.
+
 ## App content
 
 - **Ads:** No, the app contains no ads.
-- **App access:** All functionality is available without special access. Explain:
-  *"The app controls a Bambu Lab 3D printer on the user's local network. Reviewers without
-  a printer can tap 'Try the demo' on the first screen: a simulated printer runs a short
-  print, and every screen and control works with it."*
-- **Content rating:** answer the IARC questionnaire as a Utility, with no violence,
-  sexuality, language, controlled substances, gambling or user interaction. Users can't
-  communicate, share location or buy anything.
-- **Target audience:** 18 and over (16–17 also fine). Not designed for children.
+- **Sign in details** (was "App access"): Yes, restricted, with one entry, "Demo mode (no
+  printer needed)", no username or password, and these instructions:
+  *"No account or sign-in exists. The app connects to the user's own Bambu Lab 3D printer
+  on their local network, using the printer's IP and the access code shown on its screen.
+  Reviewers without a printer: on the first screen, tap 'Try the demo'. A simulated printer
+  runs a short sample print, and every screen, control, notification and alert works with
+  it."*
+- **Advertising ID:** No.
+- **Content rating:** IARC category "All Other App Types", No to every question. Result:
+  ESRB Everyone, PEGI 3, ClassInd All ages.
+- **Target audience:** 18 and over. Not designed for children.
 - **News app:** No.
 - **Government app:** No.
 - **Financial features:** None.

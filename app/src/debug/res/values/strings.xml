@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Debug builds install beside the Play build (app.layerwatch.debug); tell them apart. -->
+    <string name="app_name">LW Debug</string>
+</resources>

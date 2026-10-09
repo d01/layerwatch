@@ -1,0 +1,23 @@
+Layerwatch
+Copyright (C) 2026 D01 Development
+
+Layerwatch is free software: you can redistribute it and/or modify it under the terms of
+the GNU General Public License as published by the Free Software Foundation, either
+version 3 of the License, or (at your option) any later version. See LICENSE.
+
+Layerwatch is an independent project. It is not affiliated with, endorsed by, or
+sponsored by Bambu Lab. "Bambu Lab" and related names are trademarks of their owners and
+are used here only to describe compatibility.
+
+Third-party material included in this repository:
+
+- Geist and Geist Mono fonts (app/src/main/res/font/), Copyright 2024 The Geist Project
+  Authors, under the SIL Open Font License 1.1 (third_party/geist/OFL.txt).
+
+- HMS and print-error descriptions (protocol/src/main/resources/hms_en.tsv), text
+  published by Bambu Lab at https://e.bambulab.com/query.php?lang=en, included so that
+  printer alerts can be shown in plain language. Refreshed by tools/update_hms.py.
+
+- "BBL CA" certificate (app/src/main/res/raw/bbl_ca.pem), the public certificate
+  authority that Bambu Lab printers present on their local TLS endpoints; used only to
+  verify that the app is talking to a genuine printer.

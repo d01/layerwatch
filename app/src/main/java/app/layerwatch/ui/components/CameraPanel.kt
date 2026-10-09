@@ -61,6 +61,7 @@ fun CameraPanel(
     onFullscreen: (() -> Unit)? = null,
 ) {
     val t = LocalBambuType.current
+    if (config.isDemo) return DemoCamera(modifier, radius)
     val context = LocalContext.current
     val camera = remember(config) { PrinterCamera(context.applicationContext, tls, config) }
     val state by camera.state.collectAsStateWithLifecycle()
@@ -114,6 +115,26 @@ fun CameraPanel(
                     .clickable(role = Role.Button, onClickLabel = "Toggle full screen", onClick = onFullscreen),
                 contentAlignment = Alignment.Center,
             ) { Glyph(fullscreenIcon, Palette.text, 18.dp, description = "Full screen") }
+        }
+    }
+}
+
+/** The demo has no camera: the demo job's slicer render, clearly labelled. */
+@Composable
+private fun DemoCamera(modifier: Modifier, radius: Dp) {
+    val t = LocalBambuType.current
+    Box(modifier.clip(RoundedCornerShape(radius)).background(Palette.well), contentAlignment = Alignment.Center) {
+        androidx.compose.foundation.Image(
+            androidx.compose.ui.res.painterResource(R.drawable.demo_camera), "Demo print (simulated, no camera)",
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit, modifier = Modifier.fillMaxSize().padding(16.dp),
+        )
+        Row(
+            Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(999.dp))
+                .background(Palette.ground.copy(alpha = 0.66f)).padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Dot(Palette.blue, 7.dp)
+            Text("DEMO · SIMULATED", style = t.eyebrow.copy(letterSpacing = t.eyebrow.letterSpacing * 0.75f), color = Palette.text)
         }
     }
 }

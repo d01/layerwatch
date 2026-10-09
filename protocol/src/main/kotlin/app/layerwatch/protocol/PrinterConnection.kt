@@ -55,7 +55,7 @@ class PrinterConnection(
     private val port: Int = 8883,
     private val clock: () -> Long = System::currentTimeMillis,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-) {
+) : PrinterLink {
     data class Timing(
         val connectTimeoutMs: Int = 10_000,
         val pingIntervalMs: Int = 10_000,
@@ -66,13 +66,13 @@ class PrinterConnection(
     )
 
     private val _link = MutableStateFlow<LinkState>(LinkState.Stopped)
-    val link: StateFlow<LinkState> = _link.asStateFlow()
+    override val link: StateFlow<LinkState> = _link.asStateFlow()
 
     private val _status = MutableStateFlow<PrinterStatus?>(null)
-    val status: StateFlow<PrinterStatus?> = _status.asStateFlow()
+    override val status: StateFlow<PrinterStatus?> = _status.asStateFlow()
 
     private val _lastReportAtMs = MutableStateFlow<Long?>(null)
-    val lastReportAtMs: StateFlow<Long?> = _lastReportAtMs.asStateFlow()
+    override val lastReportAtMs: StateFlow<Long?> = _lastReportAtMs.asStateFlow()
 
     /** The merged raw report, for fields not yet modelled in [PrinterStatus]. */
     val merger = ReportMerger()
@@ -86,12 +86,12 @@ class PrinterConnection(
     @Volatile private var session: MqttSession? = null
     private var job: Job? = null
 
-    fun start() {
+    override fun start() {
         if (job?.isActive == true) return
         job = scope.launch(ioDispatcher) { superviseLoop() }
     }
 
-    fun stop() {
+    override fun stop() {
         job?.cancel()
         job = null
         session?.close()
@@ -99,7 +99,7 @@ class PrinterConnection(
     }
 
     /** Drop the current session (if any) and connect immediately, resetting backoff. */
-    fun reconnectNow() {
+    override fun reconnectNow() {
         kick.trySend(Unit)
         session?.close()
     }
@@ -107,11 +107,11 @@ class PrinterConnection(
     /** Ask the printer for a full state dump. */
     fun requestFullStatus(): Boolean = send(PrinterCommands.pushAll(nextSequence()))
 
-    fun setChamberLight(on: Boolean): Boolean = send(PrinterCommands.chamberLight(nextSequence(), on))
-    fun pause(): Boolean = send(PrinterCommands.pause(nextSequence()))
-    fun resume(): Boolean = send(PrinterCommands.resume(nextSequence()))
-    fun stopPrint(): Boolean = send(PrinterCommands.stop(nextSequence()))
-    fun setSpeed(level: SpeedLevel): Boolean = send(PrinterCommands.speed(nextSequence(), level))
+    override fun setChamberLight(on: Boolean): Boolean = send(PrinterCommands.chamberLight(nextSequence(), on))
+    override fun pause(): Boolean = send(PrinterCommands.pause(nextSequence()))
+    override fun resume(): Boolean = send(PrinterCommands.resume(nextSequence()))
+    override fun stopPrint(): Boolean = send(PrinterCommands.stop(nextSequence()))
+    override fun setSpeed(level: SpeedLevel): Boolean = send(PrinterCommands.speed(nextSequence(), level))
 
     private fun nextSequence() = sequence.getAndIncrement()
 

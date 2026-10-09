@@ -1,7 +1,7 @@
 package app.layerwatch.printer
 
 /** Bambu serial prefixes → model names; unknown prefixes fall back to "Printer". */
-fun printerModelName(serial: String): String = when (serial.take(3)) {
+fun printerModelName(serial: String): String = if (serial == "DEMO") "Demo printer" else when (serial.take(3)) {
     "00M" -> "X1 Carbon"
     "00W" -> "X1"
     "03W" -> "X1E"

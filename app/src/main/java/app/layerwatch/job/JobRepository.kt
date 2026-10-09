@@ -5,6 +5,7 @@ import app.layerwatch.printer.PrinterRepository
 import app.layerwatch.printer.PrinterTls
 import app.layerwatch.protocol.ftps.FtpsClient
 import app.layerwatch.protocol.job.JobArchive
+import app.layerwatch.protocol.DemoPrinter
 import app.layerwatch.protocol.PrinterStatus
 import app.layerwatch.protocol.job.JobFile
 import app.layerwatch.protocol.job.LayerSample
@@ -43,6 +44,7 @@ class JobRepository(
     private val printer: PrinterRepository,
     private val tls: PrinterTls,
     private val dir: File,
+    private val assets: android.content.res.AssetManager,
 ) {
     private val _state = MutableStateFlow<JobLoad>(JobLoad.None)
     val state: StateFlow<JobLoad> = _state.asStateFlow()
@@ -138,6 +140,7 @@ class JobRepository(
     /** Finds and downloads the job file; null (with state set) if it isn't on the printer. */
     private fun download(key: JobKey): File? {
         val cfg = printer.config.value ?: return null
+        if (cfg.isDemo) return demoJob(key)
         val wanted = "${key.name}.gcode.3mf"
         FtpsClient.connect(tls.socketFactory(cfg.serial), cfg.host, "bblp", cfg.accessCode).use { ftp ->
             // Jobs sent over the LAN land at the root; some firmware uses /cache or /model.
@@ -160,6 +163,15 @@ class JobRepository(
             Log.i(TAG, "downloaded $path ($size bytes)")
             return file
         }
+    }
+
+    /** The demo printer's job ships in the app's assets. */
+    private fun demoJob(key: JobKey): File? {
+        if (key.name != DemoPrinter.JOB_NAME) return null
+        dir.mkdirs()
+        val out = localFile(key)
+        assets.open("demo/${DemoPrinter.JOB_NAME}.gcode.3mf").use { input -> out.outputStream().use { input.copyTo(it) } }
+        return out
     }
 
     /** Keep the most recently used job files only. */

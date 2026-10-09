@@ -47,7 +47,7 @@ class MainActivity : ComponentActivity() {
                     is Screen.Setup -> {
                         val updating = s.prefillHost != null
                         if (updating) BackHandler(onBack = vm::cancelUpdate)
-                        SetupScreen(setup, s.prefillHost, vm::connect, if (updating) vm::cancelUpdate else null)
+                        SetupScreen(setup, s.prefillHost, vm::connect, if (updating) vm::cancelUpdate else null, onDemo = vm::startDemo)
                     }
                     is Screen.Dashboard -> DashboardScreen(
                         s.config, vm.tls,

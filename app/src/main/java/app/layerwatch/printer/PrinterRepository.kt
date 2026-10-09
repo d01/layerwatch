@@ -4,7 +4,9 @@ import android.util.Log
 import app.layerwatch.config.PrinterConfig
 import app.layerwatch.config.PrinterConfigStore
 import app.layerwatch.protocol.LinkState
+import app.layerwatch.protocol.DemoPrinter
 import app.layerwatch.protocol.PrinterConnection
+import app.layerwatch.protocol.PrinterLink
 import app.layerwatch.protocol.PrinterEndpoint
 import app.layerwatch.protocol.PrinterStatus
 import kotlinx.coroutines.CoroutineScope
@@ -45,8 +47,8 @@ class PrinterRepository(
 
     data class Loaded(val config: PrinterConfig?)
 
-    private val _connection = MutableStateFlow<PrinterConnection?>(null)
-    val connection: StateFlow<PrinterConnection?> = _connection
+    private val _connection = MutableStateFlow<PrinterLink?>(null)
+    val connection: StateFlow<PrinterLink?> = _connection
 
     val link: StateFlow<LinkState> = _connection
         .flatMapLatest { it?.link ?: flowOf(LinkState.Stopped) }
@@ -67,7 +69,8 @@ class PrinterRepository(
             config.collect { cfg ->
                 _connection.value?.stop()
                 _connection.value = cfg?.let {
-                    PrinterConnection(
+                    if (it.isDemo) DemoPrinter(scope)
+                    else PrinterConnection(
                         PrinterEndpoint(it.host, it.serial, it.accessCode),
                         tls.socketFactory(it.serial),
                         scope,

@@ -127,7 +127,9 @@ class MonitorNotifications(private val context: Context) {
                     .setProgress(pct)
             )
             b.setShortCriticalText("$pct%")
-            b.setRequestPromotedOngoing(true)
+            // The builder method arrived in 36.1; 36.0 reads the same flag from the extras.
+            if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1) b.setRequestPromotedOngoing(true)
+            else b.extras.putBoolean("android.requestPromotedOngoing", true)
         } else {
             b.setProgress(100, pct, false)
         }

@@ -48,16 +48,21 @@ class DemoPrinter(
     private var cancelledAtSec: Double? = null
     private var light = true
     private var speed = SpeedLevel.Standard
-    private var taskNo = 1
+    /** Unique per simulated print, so history never mistakes a new demo run for an old one. */
+    private var taskId = newTaskId()
 
     override fun start() {
         if (job?.isActive == true) return
         _link.value = LinkState.Online(clock())
         job = scope.launch {
+            // Advance by the time that actually passed, so a slow device doesn't fall behind plan.
+            var last = clock()
             while (isActive) {
                 emit()
                 delay(tickMs)
-                advance(tickMs / 1000.0)
+                val now = clock()
+                advance(((now - last) / 1000.0).coerceIn(0.0, 10.0))
+                last = now
             }
         }
     }
@@ -98,7 +103,7 @@ class DemoPrinter(
         phaseSec = 0.0
         cancelledAtSec = null
         paused = false
-        taskNo++
+        taskId = newTaskId()
     }
 
     internal fun emit() {
@@ -146,10 +151,20 @@ class DemoPrinter(
                 put("gcode_state", state)
                 put("stg_cur", stage)
                 put("subtask_name", if (state == "IDLE") "" else JOB_NAME)
-                put("task_id", if (state == "IDLE") "0" else "demo-$taskNo")
+                put("task_id", if (state == "IDLE") "0" else taskId)
                 put("gcode_file", "/data/Metadata/plate_1.gcode")
-                put("mc_percent", if (state == "FINISH") 100 else (printFrac * 100).toInt())
-                put("mc_remaining_time", if (active) ceil((1 - printFrac) * PLANNED_MIN).toInt() else 0)
+                // Like the job's own M73 markers: the start sequence is the first 61%.
+                val percent = when {
+                    state == "FINISH" -> 100
+                    t < PREPARE_S -> (heat * LAYER1_PERCENT).toInt()
+                    else -> LAYER1_PERCENT + (printFrac * (100 - LAYER1_PERCENT)).toInt()
+                }
+                put("mc_percent", percent)
+                put("mc_remaining_time", when {
+                    !active -> 0
+                    t < PREPARE_S -> PLANNED_MIN - ((PLANNED_MIN - LAYERS_MIN) * heat).toInt()
+                    else -> ceil((1 - printFrac) * LAYERS_MIN).toInt()
+                })
                 put("layer_num", if (state == "FINISH") LAYERS else layer)
                 put("total_layer_num", if (state == "IDLE") 0 else LAYERS)
                 put("nozzle_temper", nozzle)
@@ -194,6 +209,8 @@ class DemoPrinter(
         }
     }
 
+    private fun newTaskId() = "demo-${clock()}"
+
     private fun tray(id: Int, type: String, name: String, color: String, remain: Int) = buildJsonObject {
         put("id", id.toString())
         put("tray_type", type)
@@ -207,9 +224,13 @@ class DemoPrinter(
         /** The demo job's file name, without `.gcode.3mf`; the app bundles that file. */
         const val JOB_NAME = "bleed_rest"
         const val LAYERS = 17
+        // The demo job's plan: 12 min in all, of which the layers are the last 4 (61% onward).
+        // The start sequence is compressed to PREPARE_S; the layers run at the planned pace.
         private const val PLANNED_MIN = 12
+        private const val LAYERS_MIN = 4
+        private const val LAYER1_PERCENT = 61
         private const val PREPARE_S = 45.0
-        private const val PRINT_S = PLANNED_MIN * 60.0 // in step with the job's own plan
+        private const val PRINT_S = LAYERS_MIN * 60.0
         private const val FINISH_S = 60.0
         private const val CYCLE_S = PREPARE_S + PRINT_S + FINISH_S + 60.0
         private const val FAILED_HOLD_S = 30.0

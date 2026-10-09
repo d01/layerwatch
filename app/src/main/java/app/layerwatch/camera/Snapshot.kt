@@ -50,7 +50,8 @@ object Snapshot {
 
     @OptIn(UnstableApi::class)
     suspend fun grab(context: Context, tls: PrinterTls, config: PrinterConfig, timeoutMs: Long = 12_000): Bitmap? {
-        if (config.isDemo) return null // the demo has no camera
+        // The demo has no camera; its "snapshot" is the job's render.
+        if (config.isDemo) return android.graphics.BitmapFactory.decodeResource(context.resources, app.layerwatch.R.drawable.demo_camera)
         if (viewers.get() > 0) {
             Log.i(TAG, "skipped: camera is on screen")
             return null

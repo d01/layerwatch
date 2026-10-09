@@ -24,7 +24,7 @@ class DemoPrinterTest {
         assertEquals(JobState.Preparing, demo.status.value!!.jobState)
         step(60)
         assertEquals(JobState.Running, demo.status.value!!.jobState)
-        step(780)
+        step(250) // into the finished window (cycle: 45 s prepare, 240 s layers, 60 s finished)
         val kinds = events.map { it::class.simpleName }
         assertTrue(kinds.toString(), "FirstLayerDone" in kinds && "Finished" in kinds)
         assertEquals(100, demo.status.value!!.percent)

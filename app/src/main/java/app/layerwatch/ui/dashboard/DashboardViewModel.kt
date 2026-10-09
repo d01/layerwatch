@@ -107,6 +107,14 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    val keepScreenOn: StateFlow<Boolean> = (app as LayerwatchApp).settings.keepScreenOn
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setKeepScreenOn(on: Boolean) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch { (ctx as LayerwatchApp).settings.setKeepScreenOn(on) }
+    }
+
     /**
      * Called by the visible dashboard when it sees a print in progress: hand the print to
      * the background monitor so it's followed after the app closes. Starting a foreground

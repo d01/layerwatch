@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -114,6 +115,13 @@ fun DashboardScreen(
     // while visible, so this never fires from the background).
     val printing = state.isLive && state.status?.jobState?.isActive == true
     LaunchedEffect(printing) { if (printing) vm.printSeenWhileOpen() }
+
+    val keepScreenOn by vm.keepScreenOn.collectAsStateWithLifecycle()
+    val view = LocalView.current
+    DisposableEffect(view, keepScreenOn) {
+        view.keepScreenOn = keepScreenOn
+        onDispose { view.keepScreenOn = false }
+    }
 
     if (showDetails) {
         DetailsScreen(onBack = { showDetails = false })
@@ -297,11 +305,16 @@ private fun MoreMenu(d: Dash) {
             contentAlignment = Alignment.Center,
         ) { Glyph(R.drawable.ic_more, Palette.text, 20.dp, description = "More options") }
         val watching by d.vm.watchInBackground.collectAsStateWithLifecycle()
+        val screenOn by d.vm.keepScreenOn.collectAsStateWithLifecycle()
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             DropdownMenuItem(text = { Text("Print history") }, onClick = { open = false; d.onHistory() })
             DropdownMenuItem(
                 text = { Text(if (watching) "Background watching: on" else "Background watching: off") },
                 onClick = { open = false; d.vm.setWatchInBackground(!watching) },
+            )
+            DropdownMenuItem(
+                text = { Text(if (screenOn) "Keep screen on: on" else "Keep screen on: off") },
+                onClick = { open = false; d.vm.setKeepScreenOn(!screenOn) },
             )
             if (!d.config.isDemo) DropdownMenuItem(text = { Text("Change access code") }, onClick = { open = false; d.onUpdateCode() })
             DropdownMenuItem(text = { Text(if (d.config.isDemo) "Leave demo" else "Forget printer") }, onClick = { open = false; d.onForget() })

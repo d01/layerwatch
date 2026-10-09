@@ -8,7 +8,11 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.rtsp.RtspMediaSource
 import androidx.media3.inspector.frame.FrameExtractor
+import app.layerwatch.LayerwatchApp
 import app.layerwatch.config.PrinterConfig
+import app.layerwatch.protocol.PrinterModel
+import app.layerwatch.protocol.cameraKind
+import kotlinx.coroutines.runInterruptible
 import app.layerwatch.printer.PrinterTls
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -50,6 +54,10 @@ object Snapshot {
         if (viewers.get() > 0) {
             Log.i(TAG, "skipped: camera is on screen")
             return null
+        }
+        val liveview = (context.applicationContext as LayerwatchApp).printer.status.value?.liveview
+        if (cameraKind(PrinterModel.fromSerial(config.serial), liveview) == PrinterModel.CameraKind.Jpeg) {
+            return withContext(Dispatchers.IO) { withTimeoutOrNull(timeoutMs) { runInterruptible { JpegCameraFeed.grab(tls, config) } } }
         }
         val source = RtspMediaSource.Factory()
             .setForceUseRtpTcp(true)

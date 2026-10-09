@@ -131,7 +131,10 @@ data class PrinterStatus(
     val totalLayers: Int?,
     val nozzle: Temperature,
     val bed: Temperature,
-    val chamberC: Double?,
+    /** Chamber sensor; target set only on printers that heat the chamber (H2 series). */
+    val chamber: Temperature?,
+    /** Per-extruder temperatures on dual-nozzle printers (index 0 = right, 1 = left); else empty. */
+    val nozzles: List<Temperature>,
     val partFanPercent: Int?,
     val auxFanPercent: Int?,
     val chamberFanPercent: Int?,
@@ -152,6 +155,13 @@ data class PrinterStatus(
      * The printer advertises remote AMS drying (`fun2` bit 5, as Bambu Studio checks).
      * False on the X1C as of firmware 01.12; controls should only appear when true.
      */
+    /** From `ipcam.rtsp_url`; null until the printer has reported its camera block. */
+    val liveview: Liveview?,
+    /**
+     * Firmware that only accepts signed commands unless Developer Mode is on (`fun` bit
+     * 29, as ha-bambulab checks). Pause, stop, speed and light are then refused.
+     */
+    val commandsLocked: Boolean,
     val supportsRemoteDrying: Boolean = false,
 ) {
     val printError: String? get() =
@@ -168,10 +178,14 @@ data class PrinterStatus(
             remainingMinutes = p.int("mc_remaining_time"),
             layer = p.int("layer_num"),
             totalLayers = p.int("total_layer_num"),
-            nozzle = Temperature(p.dbl("nozzle_temper"), p.dbl("nozzle_target_temper")),
-            bed = Temperature(p.dbl("bed_temper"), p.dbl("bed_target_temper")),
-            // Newer X1 firmware reports chamber here; older firmware used chamber_temper.
-            chamberC = p.path("device", "ctc", "info", "temp").dbl() ?: p.dbl("chamber_temper"),
+            nozzle = p.dbl("nozzle_temper")?.let { Temperature(it, p.dbl("nozzle_target_temper")) }
+                ?: extruders(p).firstOrNull() ?: Temperature(null, null),
+            bed = p.dbl("bed_temper")?.let { Temperature(it, p.dbl("bed_target_temper")) }
+                ?: packedTemperature(p.path("device", "bed", "info", "temp")) ?: Temperature(null, null),
+            // Newer firmware reports the chamber under device.ctc; older used chamber_temper.
+            chamber = packedTemperature(p.path("device", "ctc", "info", "temp"))
+                ?: p.dbl("chamber_temper")?.let { Temperature(it, null) },
+            nozzles = extruders(p).takeIf { it.size >= 2 }.orEmpty(),
             partFanPercent = fanPercent(p.str("cooling_fan_speed")),
             auxFanPercent = fanPercent(p.str("big_fan1_speed")),
             chamberFanPercent = fanPercent(p.str("big_fan2_speed")),
@@ -192,6 +206,8 @@ data class PrinterStatus(
             wifiDbm = p.str("wifi_signal")?.removeSuffix("dBm")?.toIntOrNull(),
             nozzleDiameter = p.str("nozzle_diameter"),
             amsMapping = (p["mapping"] as? JsonArray).orEmpty().mapNotNull { it.int() },
+            liveview = (p["ipcam"] as? JsonObject)?.let { Liveview.from(it.str("rtsp_url")) },
+            commandsLocked = p.str("fun")?.toLongOrNull(16)?.let { (it ushr 29) and 1L == 1L } ?: false,
             supportsRemoteDrying = p.str("fun2")?.toLongOrNull(16)?.let { (it ushr 5) and 1L == 1L } ?: false,
         )
 
@@ -235,4 +251,22 @@ private fun JsonObject.dbl(key: String): Double? = this[key].dbl()
 
 // The printer sends numbers both as JSON numbers and as strings ("humidity": "2").
 private fun JsonElement?.int(): Int? = (this as? JsonPrimitive)?.let { it.longOrNull?.toInt() ?: it.content.toIntOrNull() }
+/**
+ * `device.*.info.temp` packs the current temperature in the low 16 bits and the target in
+ * the high 16 (e.g. 0x0046_0046 = 70° heading for 70°). A plain value has no target.
+ */
+internal fun packedTemperature(e: JsonElement?): Temperature? {
+    val v = e.dbl() ?: return null
+    if (v != Math.floor(v) || v < 0x10000) return Temperature(v, null)
+    val n = v.toLong()
+    return Temperature((n and 0xFFFF).toDouble(), ((n ushr 16) and 0xFFFF).toDouble())
+}
+
+/** `device.extruder.info[]` by id; dual-nozzle printers list two. */
+private fun extruders(p: JsonObject): List<Temperature> =
+    (p.path("device", "extruder", "info") as? JsonArray).orEmpty()
+        .mapNotNull { it as? JsonObject }
+        .sortedBy { it.dbl("id") ?: 0.0 }
+        .mapNotNull { packedTemperature(it["temp"]) }
+
 private fun JsonElement?.dbl(): Double? = (this as? JsonPrimitive)?.let { it.doubleOrNull ?: it.content.toDoubleOrNull() }

@@ -16,21 +16,24 @@ import javax.net.ssl.X509TrustManager
 /**
  * TLS trust for the printer's MQTT (8883), RTSPS (322) and FTPS (990) ports.
  *
- * All three present the same leaf certificate: CN = printer serial, issued by Bambu's
- * "BBL CA". A connection is trusted only if the chain validates against that bundled CA
- * *and* the leaf CN equals the configured serial, which rejects any other Bambu printer.
+ * All three present the same leaf certificate: CN = printer serial, issued by one of
+ * Bambu's CAs (older models: "BBL CA"; newer ones a per-model device CA under "BBL CA2").
+ * A connection is trusted only if the chain validates against those bundled CAs *and* the
+ * leaf CN equals the configured serial, which rejects any other Bambu printer.
+ *
+ * TLS is capped at 1.2: some firmware (P2S 01.02) never answers a TLS 1.3 ClientHello.
  * Hostname verification doesn't apply: the printer is addressed by IP and its cert names
  * the serial, not a host.
  */
 class PrinterTls(context: Context) {
 
     private val caTrust: X509TrustManager = run {
-        val ca = context.resources.openRawResource(R.raw.bbl_ca).use {
-            CertificateFactory.getInstance("X.509").generateCertificate(it)
+        val cas = context.resources.openRawResource(R.raw.bbl_ca).use {
+            CertificateFactory.getInstance("X.509").generateCertificates(it)
         }
         val store = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
             load(null, null)
-            setCertificateEntry("bbl-ca", ca)
+            cas.forEachIndexed { i, ca -> setCertificateEntry("bbl-ca-$i", ca) }
         }
         TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
             .apply { init(store) }
@@ -41,7 +44,7 @@ class PrinterTls(context: Context) {
     fun socketFactory(serial: String): SSLSocketFactory = sslContext(SerialPinnedTrust(serial)).socketFactory
 
     /**
-     * Connects to [host]:[port], validates the chain against the BBL CA, and returns the
+     * Connects to [host]:[port], validates the chain against the Bambu CAs, and returns the
      * serial from the leaf CN. Used during setup, before the serial is known.
      */
     fun probeSerial(host: String, port: Int = MQTT_PORT, timeoutMs: Int = 5_000): String {
@@ -56,7 +59,7 @@ class PrinterTls(context: Context) {
     }
 
     private fun sslContext(trust: X509TrustManager): SSLContext =
-        SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), null) }
+        SSLContext.getInstance("TLSv1.2").apply { init(null, arrayOf(trust), null) }
 
     private inner class SerialPinnedTrust(private val expectedSerial: String?) : X509TrustManager {
         @Volatile var seenSerial: String? = null

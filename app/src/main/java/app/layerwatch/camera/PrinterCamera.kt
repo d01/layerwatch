@@ -49,7 +49,7 @@ data class CameraState(
 }
 
 /**
- * The X1C chamber camera: RTSPS on port 322, H.264 over RTP interleaved in the RTSP TCP
+ * The RTSPS chamber camera (X1, P2S, H2 and X2 series): port 322, H.264 over RTP interleaved in the RTSP TCP
  * connection.
  *
  * Media3 speaks plain RTSP, but takes a SocketFactory; handing it the serial-pinned TLS

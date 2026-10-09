@@ -37,6 +37,7 @@ import app.layerwatch.R
 import app.layerwatch.protocol.AmsUnit
 import app.layerwatch.protocol.DryStatus
 import app.layerwatch.protocol.cannotDryText
+import app.layerwatch.protocol.PrinterModel
 import app.layerwatch.protocol.PrinterStatus
 import app.layerwatch.protocol.Temperature
 import app.layerwatch.protocol.Tray
@@ -202,27 +203,41 @@ fun ReadyCard(
 
 // ---------- temperatures ----------
 
-private data class TempRow(val label: String, val temp: Temperature?, val chamber: Double?)
+/** [passive]: a chamber that's measured but not heated, so it has no target to show. */
+private data class TempRow(val label: String, val temp: Temperature?, val passive: Boolean = false) {
+    val current get() = temp?.current
+    val heating get() = !passive && temp?.isHeating == true
+    val caption get() = if (passive) "passive" else "target ${Format.temp(temp?.target)}"
+}
 
-private fun temps(s: PrinterStatus?) = listOf(
-    TempRow("Nozzle", s?.nozzle, null),
-    TempRow("Bed", s?.bed, null),
-    TempRow("Chamber", null, s?.chamberC),
-)
+/** Nozzle (or both, on dual-nozzle printers), bed, and the chamber where there's a sensor. */
+private fun temps(s: PrinterStatus?, model: PrinterModel) = buildList {
+    if (s != null && s.nozzles.size >= 2) {
+        add(TempRow("Nozzle R", s.nozzles[0]))
+        add(TempRow("Nozzle L", s.nozzles[1]))
+    } else {
+        add(TempRow("Nozzle", s?.nozzle))
+    }
+    add(TempRow("Bed", s?.bed))
+    if (model.chamberSensor) {
+        val c = s?.chamber
+        add(TempRow("Chamber", c, passive = (c?.target ?: 0.0) <= 0.0))
+    }
+}
 
 /** Three tiles side by side (folded layout). */
 @Composable
-fun TempTiles(s: PrinterStatus?, live: Boolean, modifier: Modifier = Modifier) {
+fun TempTiles(s: PrinterStatus?, live: Boolean, model: PrinterModel, modifier: Modifier = Modifier) {
     val t = LocalBambuType.current
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        temps(s).forEach { row ->
+        temps(s, model).forEach { row ->
             Panel(Modifier.weight(1f), radius = 16.dp, padding = 14.dp, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                val current = row.temp?.current ?: row.chamber
+                val current = row.current
                 val target = row.temp?.target
                 Text(row.label, style = t.caption, color = Palette.muted)
                 Text(Format.temp(current), style = t.metric, color = Palette.text)
-                Text(if (row.temp == null) "passive" else "target ${Format.temp(target)}", style = t.caption, color = Palette.faint)
-                val heating = row.temp?.isHeating == true
+                Text(row.caption, style = t.caption, color = Palette.faint)
+                val heating = row.heating
                 val frac = if (heating && target != null && current != null) (current / target).toFloat() else ((current ?: 0.0) / 100.0).toFloat()
                 Bar(frac, if (heating && live) Palette.amber else Palette.idleBar)
             }
@@ -232,38 +247,39 @@ fun TempTiles(s: PrinterStatus?, live: Boolean, modifier: Modifier = Modifier) {
 
 /** Stacked rows in one panel (unfolded side column). */
 @Composable
-fun TempList(s: PrinterStatus?, live: Boolean, modifier: Modifier = Modifier) {
+fun TempList(s: PrinterStatus?, live: Boolean, model: PrinterModel, modifier: Modifier = Modifier) {
     val t = LocalBambuType.current
     Panel(modifier, padding = 18.dp) {
-        temps(s).forEachIndexed { i, row ->
-            val current = row.temp?.current ?: row.chamber
-            val heating = row.temp?.isHeating == true
+        val rows = temps(s, model)
+        rows.forEachIndexed { i, row ->
+            val current = row.current
+            val heating = row.heating
             Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(row.label, style = t.label, color = Palette.muted)
-                    Text(if (row.temp == null) "passive" else "target ${Format.temp(row.temp.target)}", style = t.caption, color = Palette.faint)
+                    Text(row.caption, style = t.caption, color = Palette.faint)
                 }
                 Text(Format.temp(current), style = t.metric, color = if (heating && live) Palette.amber else Palette.text)
             }
-            if (i < 2) Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.hairline))
+            if (i < rows.lastIndex) Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.hairline))
         }
     }
 }
 
 /** Compact tiles for the tabletop lower half. */
 @Composable
-fun TempStrip(s: PrinterStatus?, live: Boolean, modifier: Modifier = Modifier) {
+fun TempStrip(s: PrinterStatus?, live: Boolean, model: PrinterModel, modifier: Modifier = Modifier) {
     val t = LocalBambuType.current
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        temps(s).forEach { row ->
-            val current = row.temp?.current ?: row.chamber
-            val heating = row.temp?.isHeating == true
+        temps(s, model).forEach { row ->
+            val current = row.current
+            val heating = row.heating
             Panel(Modifier.weight(1f), radius = 16.dp, padding = 14.dp) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(row.label, style = t.caption, color = Palette.muted)
                         Text(
-                            if (row.temp == null) s?.chamberFanPercent?.let { "fan $it%" } ?: "passive" else "target ${Format.temp(row.temp.target)}",
+                            if (row.passive) s?.chamberFanPercent?.let { "fan $it%" } ?: "passive" else row.caption,
                             style = t.tiny, color = Palette.faint,
                         )
                     }

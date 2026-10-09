@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug copy of main/res/drawable/ic_launcher_foreground.xml plus a badge; keep the two in step. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M38,32h32a6,6 0,0 1,6 6v32a6,6 0,0 1,-6 6H38a6,6 0,0 1,-6 -6V38a6,6 0,0 1,6 -6z"
+        android:fillColor="#00000000"
+        android:strokeColor="#F4B04A"
+        android:strokeWidth="4" />
+    <path android:pathData="M34,44h40" android:strokeColor="#F4B04A" android:strokeWidth="3" android:strokeLineCap="round" />
+    <path android:pathData="M48,44h12v6l-6,6l-6,-6z" android:fillColor="#F4B04A" />
+    <path android:pathData="M44,62h20v8H44z" android:fillColor="#EDEFF1" />
+    <!-- Debug badge: a red dot on the frame's top-right corner, inside the safe zone. -->
+    <path android:pathData="M74,34m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0" android:fillColor="#1E3A8A" />
+    <path android:pathData="M74,34m-6,0a6,6 0,1 1,12 0a6,6 0,1 1,-12 0" android:fillColor="#EF4444" />
+</vector>

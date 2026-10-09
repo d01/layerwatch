@@ -31,6 +31,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Installs beside the Play build, so a device can run both.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             signingConfigs.findByName("upload")?.let { signingConfig = it }
             isMinifyEnabled = true

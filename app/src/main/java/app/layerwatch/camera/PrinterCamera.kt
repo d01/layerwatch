@@ -1,6 +1,7 @@
 package app.layerwatch.camera
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -23,6 +24,7 @@ import androidx.media3.exoplayer.trackselection.ExoTrackSelection
 import androidx.media3.exoplayer.upstream.Allocator
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.rtsp.RtspMediaSource
+import androidx.media3.exoplayer.util.EventLogger
 import app.layerwatch.config.PrinterConfig
 import app.layerwatch.printer.PrinterTls
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -77,6 +79,9 @@ class PrinterCamera(
     private val cushion = CushionPolicy()
     /** When the renderer last released a frame; written on the playback thread. */
     @Volatile private var lastFrameAt = 0L
+    @Volatile private var lastFramePtsUs = Long.MIN_VALUE
+    @Volatile private var framesReleased = 0L
+    private val diagnostics = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
     fun start(): ExoPlayer {
         player?.let { return it }
@@ -98,7 +103,19 @@ class PrinterCamera(
         cushion.onStart(SystemClock.elapsedRealtime())
         p.addListener(playerListener)
         p.addAnalyticsListener(analyticsListener)
-        p.setVideoFrameMetadataListener { _, _, _, _ -> lastFrameAt = SystemClock.elapsedRealtime() }
+        p.setVideoFrameMetadataListener { ptsUs, releaseNs, format, _ ->
+            lastFrameAt = SystemClock.elapsedRealtime()
+            framesReleased++
+            if (diagnostics) {
+                val prev = lastFramePtsUs
+                // 30 fps is ~33 ms apart; anything far off that is a timestamp discontinuity.
+                if (prev != Long.MIN_VALUE && (ptsUs <= prev || ptsUs - prev > 500_000)) {
+                    Log.w(TAG, "diag: pts jump ${prev} -> ${ptsUs} (${(ptsUs - prev) / 1000} ms), release=${releaseNs}, fmt=${format.codecs}")
+                }
+            }
+            lastFramePtsUs = ptsUs
+        }
+        if (diagnostics) p.addAnalyticsListener(EventLogger(TAG))
         player = p
         connect()
         main.post(tick)
@@ -112,7 +129,7 @@ class PrinterCamera(
             // "playing", while no frame arrives any more; only fresh frames prove it's live.
             val frameAge = SystemClock.elapsedRealtime() - lastFrameAt
             if (_state.value.status == CameraState.Status.Playing &&
-                p.playbackState == Player.STATE_READY && frameAge > FROZEN_MS
+                p.playbackState == Player.STATE_READY && frameAge > (if (diagnostics) 60_000 else FROZEN_MS)
             ) {
                 restart("no new frame for ${frameAge}ms while playing")
             } else if (p.isPlaying) {
@@ -121,9 +138,21 @@ class PrinterCamera(
                 if (p.playbackParameters.speed != speed) p.setPlaybackSpeed(speed)
                 _state.update { it.copy(cushionMs = cushion.cushionMs, latencyMs = ahead) }
             }
+            if (diagnostics && ++ticks % 5 == 0) {
+                val c = p.videoDecoderCounters
+                Log.i(
+                    TAG, "diag: state=${p.playbackState} playing=${p.isPlaying} pos=${p.currentPosition} " +
+                        "buf=${p.bufferedPosition} speed=${p.playbackParameters.speed} frameAge=${frameAge}ms " +
+                        "released=$framesReleased lastPts=${lastFramePtsUs / 1000} " +
+                        "rendered=${c?.renderedOutputBufferCount} dropped=${c?.droppedBufferCount} " +
+                        "skipped=${c?.skippedOutputBufferCount} queuedIn=${c?.queuedInputBufferCount} " +
+                        "maxLate=${c?.maxConsecutiveDroppedBufferCount}",
+                )
+            }
             main.postDelayed(this, 1_000)
         }
     }
+    private var ticks = 0
 
     fun stop() {
         main.removeCallbacksAndMessages(null)
@@ -146,7 +175,8 @@ class PrinterCamera(
             .setSocketFactory(tls.socketFactory(config.serial))
             .setTimeoutMs(CONNECT_TIMEOUT_MS)
             .createMediaSource(MediaItem.fromUri(streamUri(config)))
-        p.setMediaSource(source)
+        // The printer re-bases the stream's timestamps whenever another client starts it.
+        p.setMediaSource(ContinuousTimestampSource(source))
         p.prepare()
         p.playWhenReady = true
     }

@@ -23,7 +23,10 @@ class PrinterStatusTest {
         assertEquals("1", s.taskId)
         assertEquals(1, s.plateIndex)
         assertEquals(502, s.totalLayers)
-        assertEquals(39.0, s.chamberC!!, 0.0)
+        assertEquals(Temperature(39.0, null), s.chamber)
+        assertEquals(Liveview.Rtsps, s.liveview)
+        assertFalse(s.commandsLocked) // fun 20011830F9CFB: bit 29 clear, commands accepted
+        assertTrue(s.nozzles.isEmpty()) // one extruder
         assertEquals(70.0, s.bed.target!!, 0.0)
         assertEquals(SpeedLevel.Standard, s.speed)
         assertEquals(true, s.chamberLightOn)
@@ -82,6 +85,41 @@ class PrinterStatusTest {
         assertFalse(s.jobState.isActive)
         assertNull(s.percent)
         assertTrue(s.ams.isEmpty())
+    }
+
+    @Test fun packedDeviceTemperatures() {
+        // The X1C's own device block: bed 0x0046_0046, extruder 0x00FF_00FC.
+        assertEquals(Temperature(70.0, 70.0), packedTemperature(kotlinx.serialization.json.JsonPrimitive(4587590)))
+        assertEquals(Temperature(252.0, 255.0), packedTemperature(kotlinx.serialization.json.JsonPrimitive(16711932)))
+        assertEquals(Temperature(39.0, null), packedTemperature(kotlinx.serialization.json.JsonPrimitive(39)))
+    }
+
+    @Test fun dualNozzleAndHeatedChamber() {
+        // H2D shape: two extruders and a chamber heading for 45°; no top-level temperatures.
+        val s = status("""{"print":{"command":"push_status","device":{
+            "extruder":{"info":[{"id":1,"temp":${(220 shl 16) or 180}},{"id":0,"temp":${(250 shl 16) or 249}}],"state":2},
+            "bed":{"info":{"temp":${(80 shl 16) or 79}}},"ctc":{"info":{"temp":${(45 shl 16) or 40}}}}}}""")
+        assertEquals(listOf(Temperature(249.0, 250.0), Temperature(180.0, 220.0)), s.nozzles)
+        assertEquals(Temperature(249.0, 250.0), s.nozzle)
+        assertEquals(Temperature(79.0, 80.0), s.bed)
+        assertEquals(Temperature(40.0, 45.0), s.chamber)
+    }
+
+    @Test fun cameraAndLocks() {
+        assertEquals(Liveview.NotReported, status("""{"print":{"command":"push_status","ipcam":{"ipcam_dev":"1"}}}""").liveview) // P1, A1
+        assertEquals(Liveview.Disabled, status("""{"print":{"command":"push_status","ipcam":{"rtsp_url":"disable"}}}""").liveview)
+        assertNull(status("""{"print":{"command":"push_status"}}""").liveview)
+        assertTrue(status("""{"print":{"command":"push_status","fun":"3EC1AFFF9CFF"}}""").commandsLocked) // Developer Mode off
+        assertFalse(status("""{"print":{"command":"push_status","fun":"3EC18FFF9CFF"}}""").commandsLocked)
+    }
+
+    @Test fun modelsAndCameras() {
+        assertEquals(PrinterModel.X1Carbon, PrinterModel.fromSerial("00M00A000000000"))
+        assertEquals(PrinterModel.A1Mini, PrinterModel.fromSerial("0300000000000"))
+        assertEquals(PrinterModel.Unknown, PrinterModel.fromSerial("ZZZ"))
+        assertEquals(PrinterModel.CameraKind.Jpeg, cameraKind(PrinterModel.P1S, null))
+        assertEquals(PrinterModel.CameraKind.Jpeg, cameraKind(PrinterModel.Unknown, Liveview.NotReported))
+        assertEquals(PrinterModel.CameraKind.Rtsps, cameraKind(PrinterModel.Unknown, Liveview.Rtsps))
     }
 
     private fun status(report: String): PrinterStatus {

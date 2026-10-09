@@ -18,6 +18,9 @@ Third-party material included in this repository:
   published by Bambu Lab at https://e.bambulab.com/query.php?lang=en, included so that
   printer alerts can be shown in plain language. Refreshed by tools/update_hms.py.
 
-- "BBL CA" certificate (app/src/main/res/raw/bbl_ca.pem), the public certificate
-  authority that Bambu Lab printers present on their local TLS endpoints; used only to
-  verify that the app is talking to a genuine printer.
+- Bambu Lab CA certificates (app/src/main/res/raw/bbl_ca.pem): the public root
+  certificates "BBL CA", "BBL CA2 RSA" and "BBL CA2 ECC", and the per-model device CAs
+  for the H2C, P2S and X2D, which issue the certificates Bambu Lab printers present on
+  their local TLS endpoints. Used only to verify that the app is talking to a genuine
+  printer. The newer certificates were collected by the ha-bambulab project
+  (https://github.com/greghesp/ha-bambulab, MIT License).

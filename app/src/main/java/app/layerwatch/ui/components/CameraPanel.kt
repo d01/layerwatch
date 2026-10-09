@@ -37,6 +37,13 @@ import androidx.media3.ui.PlayerView
 import app.layerwatch.R
 import app.layerwatch.camera.CameraState
 import app.layerwatch.camera.PrinterCamera
+import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.graphics.asImageBitmap
+import app.layerwatch.protocol.cameraKind
+import app.layerwatch.protocol.PrinterModel
+import app.layerwatch.protocol.Liveview
+import app.layerwatch.camera.Snapshot
+import app.layerwatch.camera.JpegCameraFeed
 import app.layerwatch.config.PrinterConfig
 import app.layerwatch.printer.PrinterTls
 import app.layerwatch.ui.theme.LocalBambuType
@@ -63,6 +70,15 @@ fun CameraPanel(
     val t = LocalBambuType.current
     if (config.isDemo) return DemoCamera(modifier, radius)
     val context = LocalContext.current
+    val status by (context.applicationContext as app.layerwatch.LayerwatchApp).printer.status.collectAsStateWithLifecycle()
+    val liveview = status?.liveview
+    if (liveview == Liveview.Disabled) return CameraMessage(
+        modifier, radius, "LAN Only Liveview is off",
+        "Turn it on in the printer's network settings to watch the camera here.",
+    )
+    if (cameraKind(PrinterModel.fromSerial(config.serial), liveview) == PrinterModel.CameraKind.Jpeg) {
+        return JpegCameraPanel(config, tls, modifier, radius, crop, fullscreenIcon, onFullscreen)
+    }
     val camera = remember(config) { PrinterCamera(context.applicationContext, tls, config) }
     val state by camera.state.collectAsStateWithLifecycle()
     var player by remember { mutableStateOf<Player?>(null) }
@@ -136,5 +152,73 @@ private fun DemoCamera(modifier: Modifier, radius: Dp) {
             Dot(Palette.blue, 7.dp)
             Text("DEMO · SIMULATED", style = t.eyebrow.copy(letterSpacing = t.eyebrow.letterSpacing * 0.75f), color = Palette.text)
         }
+    }
+}
+
+/** P1/A1 camera: a still every second or two over port 6000, shown as it arrives. */
+@Composable
+private fun JpegCameraPanel(
+    config: PrinterConfig, tls: PrinterTls, modifier: Modifier, radius: Dp, crop: Boolean,
+    fullscreenIcon: Int, onFullscreen: (() -> Unit)?,
+) {
+    val t = LocalBambuType.current
+    val feed = remember(config) { JpegCameraFeed(tls, config) }
+    val state by feed.state.collectAsStateWithLifecycle()
+    val frame by feed.frame.collectAsStateWithLifecycle()
+    LifecycleStartEffect(feed) {
+        Snapshot.viewerStarted()
+        feed.start()
+        onStopOrDispose {
+            feed.stop()
+            Snapshot.viewerStopped()
+        }
+    }
+    Box(
+        modifier.clip(RoundedCornerShape(radius)).background(Color.Black)
+            .semantics { contentDescription = "Chamber camera" },
+    ) {
+        frame?.let {
+            androidx.compose.foundation.Image(
+                it.asImageBitmap(), null,
+                contentScale = if (crop) androidx.compose.ui.layout.ContentScale.Crop else androidx.compose.ui.layout.ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        val (dot, label) = when (state.status) {
+            CameraState.Status.Playing -> Palette.amber to "LIVE · STILLS"
+            CameraState.Status.Retrying -> Palette.faint to "Reconnecting camera…"
+            CameraState.Status.Connecting -> Palette.faint to "Connecting camera…"
+            CameraState.Status.Stopped -> Palette.faint to "Camera paused"
+        }
+        Row(
+            Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(999.dp))
+                .background(Palette.ground.copy(alpha = 0.66f)).padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Dot(dot, 7.dp)
+            Text(label, style = t.eyebrow.copy(letterSpacing = t.eyebrow.letterSpacing * 0.75f), color = Palette.text)
+        }
+        if (onFullscreen != null) {
+            Box(
+                Modifier.align(Alignment.BottomEnd).padding(10.dp).size(44.dp).clip(CircleShape)
+                    .background(Palette.ground.copy(alpha = 0.66f))
+                    .clickable(role = Role.Button, onClickLabel = "Toggle full screen", onClick = onFullscreen),
+                contentAlignment = Alignment.Center,
+            ) { Glyph(fullscreenIcon, Palette.text, 18.dp, description = "Full screen") }
+        }
+    }
+}
+
+/** In place of the camera when it can't be shown, with what to do about it. */
+@Composable
+private fun CameraMessage(modifier: Modifier, radius: Dp, title: String, body: String) {
+    val t = LocalBambuType.current
+    Column(
+        modifier.clip(RoundedCornerShape(radius)).background(Palette.well).padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(title, style = t.label, color = Palette.text)
+        Text(body, style = t.caption, color = Palette.muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }

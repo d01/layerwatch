@@ -84,7 +84,14 @@ fun HealthBanner(state: DashboardState, onRetry: () -> Unit, onFixAccessCode: ()
     val context = LocalContext.current
     val age = state.reportAgeSec?.let { "Last report ${Format.age(it)} ago" }
     when (val h = state.health) {
-        Health.Live, Health.Connecting -> Unit
+        Health.Live -> if (state.status?.commandsLocked == true) Banner(
+            icon = R.drawable.ic_lock, bg = Palette.cardRaised, fg = Color(0xFFC9D1D9),
+            title = "Controls need Developer Mode",
+            body = "This printer's firmware only accepts pause, stop, speed and light commands from other apps " +
+                "when LAN Only Mode and Developer Mode are both on, in its network settings. Monitoring works either way.",
+            action = null, onAction = {}, modifier = modifier,
+        )
+        Health.Connecting -> Unit
         is Health.Reconnecting -> Banner(
             icon = R.drawable.ic_refresh, bg = Palette.amberSoft, fg = Palette.amberText,
             title = if (h.retryInSec > 0) "Reconnecting · retry in ${h.retryInSec} s" else "Reconnecting…",
@@ -102,7 +109,7 @@ fun HealthBanner(state: DashboardState, onRetry: () -> Unit, onFixAccessCode: ()
         Health.AuthFailed -> Banner(
             icon = R.drawable.ic_lock, bg = Palette.errorSoft, fg = Palette.errorText,
             title = "The printer refused the access code",
-            body = "It changes if it's regenerated on the printer. Find the current one under Settings → LAN on its screen.",
+            body = "It changes if it's regenerated on the printer. Find the current one in the printer's network settings.",
             action = "Update access code", onAction = onFixAccessCode, modifier = modifier,
         )
     }
@@ -111,7 +118,7 @@ fun HealthBanner(state: DashboardState, onRetry: () -> Unit, onFixAccessCode: ()
 @Composable
 private fun Banner(
     icon: Int, bg: Color, fg: Color, title: String, body: String,
-    action: String, onAction: () -> Unit, modifier: Modifier,
+    action: String?, onAction: () -> Unit, modifier: Modifier,
 ) {
     val t = LocalBambuType.current
     Panel(modifier.fillMaxWidth(), padding = 14.dp, verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -123,7 +130,7 @@ private fun Banner(
             Text(title, style = t.label, color = fg)
         }
         if (body.isNotBlank()) Text(body, style = t.caption, color = Palette.muted)
-        ControlButton(action, ControlStyle.Secondary, onAction, Modifier.fillMaxWidth(), minHeight = 44.dp) {}
+        if (action != null) ControlButton(action, ControlStyle.Secondary, onAction, Modifier.fillMaxWidth(), minHeight = 44.dp) {}
     }
 }
 

@@ -84,6 +84,7 @@ private class Dash(
     val onUpdateCode: () -> Unit,
 ) {
     val live get() = state.isLive
+    val model = app.layerwatch.protocol.PrinterModel.fromSerial(config.serial)
     var dismissed: Set<String> = emptySet()
     var lastPrint: app.layerwatch.history.PrintRecord? = null
     var onOpenRecord: (String) -> Unit = {}
@@ -165,7 +166,7 @@ private fun FoldedLayout(d: Dash) {
         Column(Modifier.dimWhenStale(d.live), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (isIdle(s)) ReadyCard(s!!, d.live, d.lastPrint, d.onOpenRecord, Modifier.fillMaxWidth())
             else JobCard(s, d.state.nowMs, d.live, Modifier.fillMaxWidth(), onDetails = d.onDetails)
-            TempTiles(s, d.live, Modifier.fillMaxWidth())
+            TempTiles(s, d.live, d.model, Modifier.fillMaxWidth())
             AmsCard(s, Modifier.fillMaxWidth())
             Panel(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 FanGrid(s)
@@ -203,7 +204,7 @@ private fun UnfoldedLayout(d: Dash) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { MoreMenu(d) }
-            TempList(s, d.live, Modifier.fillMaxWidth())
+            TempList(s, d.live, d.model, Modifier.fillMaxWidth())
             AmsList(s, Modifier.fillMaxWidth())
             Panel(Modifier.fillMaxWidth(), padding = 16.dp, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 FanGrid(s, compact = true)
@@ -266,7 +267,7 @@ private fun TabletopLayout(d: Dash) {
                 Text("Speed unlocked · choose within ${d.state.speedUnlockSec} s", style = t.label, color = Palette.amberText)
                 SpeedControl(d.state, d.vm::unlockSpeed, d.vm::setSpeed, showUnlock = false)
             }
-            TempStrip(s, d.live, Modifier.fillMaxWidth().dimWhenStale(d.live))
+            TempStrip(s, d.live, d.model, Modifier.fillMaxWidth().dimWhenStale(d.live))
             AmsStrip(s, Modifier.fillMaxWidth().dimWhenStale(d.live))
         }
     }

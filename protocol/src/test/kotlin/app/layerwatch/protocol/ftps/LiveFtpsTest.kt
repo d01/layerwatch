@@ -20,13 +20,13 @@ class LiveFtpsTest {
         val host = System.getenv("BAMBU_HOST")
         val code = System.getenv("BAMBU_CODE")
         assumeNotNull(host, code)
-        val ca = File("../app/src/main/res/raw/bbl_ca.pem").inputStream().use {
-            CertificateFactory.getInstance("X.509").generateCertificate(it)
+        val cas = File("../app/src/main/res/raw/bbl_ca.pem").inputStream().use {
+            CertificateFactory.getInstance("X.509").generateCertificates(it)
         }
         val trust = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply {
-            init(KeyStore.getInstance(KeyStore.getDefaultType()).apply { load(null, null); setCertificateEntry("ca", ca) })
+            init(KeyStore.getInstance(KeyStore.getDefaultType()).apply { load(null, null); cas.forEachIndexed { i, c -> setCertificateEntry("ca$i", c) } })
         }
-        val factory = SSLContext.getInstance("TLS").apply { init(null, trust.trustManagers, null) }.socketFactory
+        val factory = SSLContext.getInstance("TLSv1.2").apply { init(null, trust.trustManagers, null) }.socketFactory
 
         FtpsClient.connect(factory, host, "bblp", code).use { ftp ->
             val jobs = ftp.list("/").filter { it.name.endsWith(".gcode.3mf") }

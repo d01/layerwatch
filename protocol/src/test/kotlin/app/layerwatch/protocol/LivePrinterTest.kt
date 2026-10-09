@@ -26,13 +26,13 @@ class LivePrinterTest {
         val code = System.getenv("BAMBU_CODE")
         assumeNotNull(host, serial, code)
 
-        val ca = File("../app/src/main/res/raw/bbl_ca.pem").inputStream().use {
-            CertificateFactory.getInstance("X.509").generateCertificate(it)
+        val cas = File("../app/src/main/res/raw/bbl_ca.pem").inputStream().use {
+            CertificateFactory.getInstance("X.509").generateCertificates(it)
         }
         val trust = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply {
-            init(KeyStore.getInstance(KeyStore.getDefaultType()).apply { load(null, null); setCertificateEntry("ca", ca) })
+            init(KeyStore.getInstance(KeyStore.getDefaultType()).apply { load(null, null); cas.forEachIndexed { i, c -> setCertificateEntry("ca$i", c) } })
         }
-        val tls = SSLContext.getInstance("TLS").apply { init(null, trust.trustManagers, null) }
+        val tls = SSLContext.getInstance("TLSv1.2").apply { init(null, trust.trustManagers, null) }
 
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val c = PrinterConnection(PrinterEndpoint(host, serial, code), tls.socketFactory, scope)

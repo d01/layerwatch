@@ -31,6 +31,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Separate application id, so debug and release builds can be installed together.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             signingConfigs.findByName("upload")?.let { signingConfig = it }
             isMinifyEnabled = true

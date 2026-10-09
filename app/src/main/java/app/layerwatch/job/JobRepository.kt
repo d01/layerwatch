@@ -53,7 +53,8 @@ class JobRepository(
     /** When each layer of the active job was seen starting (for the pace estimate). */
     private val _samples = MutableStateFlow<List<LayerSample>>(emptyList())
     val samples: StateFlow<List<LayerSample>> = _samples.asStateFlow()
-    private var samplesKey: JobKey? = null
+    /** Whose samples [_samples] holds: the job plus the printer's task id for this run. */
+    private var samplesKey: Pair<JobKey, String?>? = null
     private var lastSeenLayer: Int? = null
 
     init {
@@ -74,10 +75,17 @@ class JobRepository(
     private fun recordLayer(s: PrinterStatus?) {
         val key = s?.takeIf { it.jobState.isActive }?.jobName?.let { JobKey(it, s.plateIndex ?: 1) } ?: return
         val layer = s.layer?.takeIf { it > 0 } ?: return
-        if (key != samplesKey) {
-            samplesKey = key
+        // The same file printed again is a new task, with its own pace and plan anchor.
+        val run = key to s.taskId
+        if (run != samplesKey) {
+            samplesKey = run
             lastSeenLayer = null
-            _samples.value = loadSamples(key)
+            _samples.value = loadSamples(key, s.taskId)
+        }
+        // Without a task id, a layer below the last sample means a new print of the same job.
+        if (s.taskId == null && (_samples.value.lastOrNull()?.layer ?: 0) > layer) {
+            _samples.value = emptyList()
+            runCatching { samplesFile(key, null).delete() }
         }
         val seen = lastSeenLayer
         lastSeenLayer = layer
@@ -86,14 +94,17 @@ class JobRepository(
         if ((observedChange && (last == null || layer > last)) || _samples.value.isEmpty()) {
             val sample = LayerSample(layer, System.currentTimeMillis())
             _samples.value = _samples.value + sample
-            runCatching { samplesFile(key).appendText("${sample.layer},${sample.atMs}\n") }
+            runCatching { samplesFile(key, s.taskId).appendText("${sample.layer},${sample.atMs}\n") }
         }
     }
 
-    private fun samplesFile(key: JobKey) = File(dir.apply { mkdirs() }, localFile(key).name.removeSuffix(".gcode.3mf") + ".layers")
+    private fun samplesFile(key: JobKey, taskId: String?) = File(
+        dir.apply { mkdirs() },
+        localFile(key).name.removeSuffix(".gcode.3mf") + (taskId?.let { "-task-" + it.filter(Char::isLetterOrDigit) } ?: "") + ".layers",
+    )
 
-    private fun loadSamples(key: JobKey): List<LayerSample> = runCatching {
-        samplesFile(key).readLines().mapNotNull { line ->
+    private fun loadSamples(key: JobKey, taskId: String?): List<LayerSample> = runCatching {
+        samplesFile(key, taskId).readLines().mapNotNull { line ->
             val (l, t) = line.split(',').takeIf { it.size == 2 } ?: return@mapNotNull null
             LayerSample(l.toIntOrNull() ?: return@mapNotNull null, t.toLongOrNull() ?: return@mapNotNull null)
         }
@@ -181,7 +192,9 @@ class JobRepository(
             ?.drop(MAX_CACHED)
             ?.forEach { stale ->
                 stale.delete()
-                File(dir, stale.name.removeSuffix(".gcode.3mf") + ".layers").delete()
+                val base = stale.name.removeSuffix(".gcode.3mf")
+                dir.listFiles { f -> f.name.endsWith(".layers") && (f.name == "$base.layers" || f.name.startsWith("$base-task-")) }
+                    ?.forEach { it.delete() }
             }
     }
 

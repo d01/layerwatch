@@ -1,6 +1,7 @@
 package app.layerwatch.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,7 +28,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import app.layerwatch.ui.components.ControlButton
 import app.layerwatch.ui.components.ControlStyle
@@ -45,6 +48,7 @@ fun SetupScreen(
     val t = LocalBambuType.current
     var host by rememberSaveable { mutableStateOf(prefillHost.orEmpty()) }
     var code by rememberSaveable { mutableStateOf("") }
+    var showCode by rememberSaveable { mutableStateOf(false) }
     val checking = state is SetupState.Checking
     val updating = prefillHost != null
 
@@ -87,8 +91,19 @@ fun SetupScreen(
             OutlinedTextField(
                 value = code, onValueChange = { code = it },
                 label = { Text("Access code") }, singleLine = true, enabled = !checking,
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                visualTransformation = if (showCode) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    Text(
+                        if (showCode) "Hide" else "Show", style = t.label, color = Palette.amber,
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                            .clickable(role = Role.Button, onClickLabel = if (showCode) "Hide access code" else "Show access code") { showCode = !showCode }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    )
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = if (showCode) KeyboardType.Ascii else KeyboardType.Password,
+                    autoCorrectEnabled = false, imeAction = ImeAction.Done,
+                ),
                 colors = colors, modifier = Modifier.fillMaxWidth(),
             )
             when (state) {

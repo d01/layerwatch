@@ -18,7 +18,15 @@ class AppSettings(private val context: Context) {
         context.settingsStore.edit { it[WATCH] = on }
     }
 
+    /** Stop the screen from sleeping while the dashboard is open. */
+    val keepScreenOn: Flow<Boolean> = context.settingsStore.data.map { it[SCREEN_ON] ?: false }
+
+    suspend fun setKeepScreenOn(on: Boolean) {
+        context.settingsStore.edit { it[SCREEN_ON] = on }
+    }
+
     private companion object {
         val WATCH = booleanPreferencesKey("watch_in_background")
+        val SCREEN_ON = booleanPreferencesKey("keep_screen_on")
     }
 }

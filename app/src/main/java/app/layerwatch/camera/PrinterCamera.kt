@@ -75,6 +75,8 @@ class PrinterCamera(
     private var startedAt = 0L
     private var attempt = 0
     private val cushion = CushionPolicy()
+    /** When the renderer last released a frame; written on the playback thread. */
+    @Volatile private var lastFrameAt = 0L
 
     fun start(): ExoPlayer {
         player?.let { return it }
@@ -96,6 +98,7 @@ class PrinterCamera(
         cushion.onStart(SystemClock.elapsedRealtime())
         p.addListener(playerListener)
         p.addAnalyticsListener(analyticsListener)
+        p.setVideoFrameMetadataListener { _, _, _, _ -> lastFrameAt = SystemClock.elapsedRealtime() }
         player = p
         connect()
         main.post(tick)
@@ -105,7 +108,14 @@ class PrinterCamera(
     private val tick = object : Runnable {
         override fun run() {
             val p = player ?: return
-            if (p.isPlaying) {
+            // The stall check only covers BUFFERING. The player can also sit in READY,
+            // "playing", while no frame arrives any more; only fresh frames prove it's live.
+            val frameAge = SystemClock.elapsedRealtime() - lastFrameAt
+            if (_state.value.status == CameraState.Status.Playing &&
+                p.playbackState == Player.STATE_READY && frameAge > FROZEN_MS
+            ) {
+                restart("no new frame for ${frameAge}ms while playing")
+            } else if (p.isPlaying) {
                 val ahead = p.bufferedPosition - p.currentPosition
                 val speed = cushion.onTick(SystemClock.elapsedRealtime(), ahead)
                 if (p.playbackParameters.speed != speed) p.setPlaybackSpeed(speed)
@@ -189,6 +199,7 @@ class PrinterCamera(
 
         override fun onRenderedFirstFrame() {
             val ms = SystemClock.elapsedRealtime() - startedAt
+            lastFrameAt = SystemClock.elapsedRealtime()
             attempt = 0
             Log.i(TAG, "first frame after ${ms}ms")
             _state.update { it.copy(status = CameraState.Status.Playing, firstFrameMs = ms) }
@@ -211,6 +222,8 @@ class PrinterCamera(
         private const val RETRY_BASE_MS = 1_000L
         private const val RETRY_MAX_MS = 30_000L
         private const val STALL_TIMEOUT_MS = 10_000L
+        /** Frames normally come at 30 fps with gaps up to ~700 ms on weak printer WiFi. */
+        private const val FROZEN_MS = 6_000L
 
         fun streamUri(config: PrinterConfig): Uri = Uri.Builder()
             .scheme("rtsps")

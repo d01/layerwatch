@@ -11,8 +11,8 @@ android {
         applicationId = "app.layerwatch"
         minSdk = 35
         targetSdk = 37
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.1.2"
     }
 
     // Optional release signing from Gradle properties (never the repo). Without it,

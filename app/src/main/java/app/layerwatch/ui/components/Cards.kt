@@ -21,7 +21,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -36,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import app.layerwatch.R
 import app.layerwatch.protocol.AmsUnit
 import app.layerwatch.protocol.DryStatus
+import app.layerwatch.protocol.HeatState
 import app.layerwatch.protocol.cannotDryText
 import app.layerwatch.protocol.PrinterModel
 import app.layerwatch.protocol.PrinterStatus
@@ -52,11 +62,14 @@ fun Panel(
     radius: Dp = 20.dp,
     padding: Dp = 18.dp,
     verticalArrangement: Arrangement.Vertical = Arrangement.Top,
+    /** Drawn over the card's background and under its content (e.g. [emberGlow]). */
+    surface: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) = Column(
     modifier
         .clip(RoundedCornerShape(radius))
         .background(Palette.card)
+        .then(surface)
         .padding(padding),
     verticalArrangement = verticalArrangement,
     content = content,
@@ -206,8 +219,46 @@ fun ReadyCard(
 /** [passive]: a chamber that's measured but not heated, so it has no target to show. */
 private data class TempRow(val label: String, val temp: Temperature?, val passive: Boolean = false) {
     val current get() = temp?.current
-    val heating get() = !passive && temp?.isHeating == true
-    val caption get() = if (passive) "passive" else "target ${Format.temp(temp?.target)}"
+    val state get() = if (passive) HeatState.Off else temp?.heatState ?: HeatState.Off
+    val heating get() = state != HeatState.Off
+    val caption get() = when {
+        passive -> "passive"
+        state == HeatState.HeatingUp -> "heating to ${Format.temp(temp?.target)}"
+        state == HeatState.CoolingDown -> "cooling to ${Format.temp(temp?.target)}"
+        temp?.target == 0.0 -> "off"
+        else -> "target ${Format.temp(temp?.target)}"
+    }
+
+    /** Reading colour: ember while climbing, amber while held, plain otherwise or when stale. */
+    fun readingColor(live: Boolean) = when {
+        !live -> Palette.text
+        state == HeatState.HeatingUp -> Palette.emberText
+        heating -> Palette.amber
+        else -> Palette.text
+    }
+}
+
+/**
+ * A slowly pulsing ember glow rising from the bottom edge, while a heater climbs to its
+ * target. Nothing is drawn (or animated) otherwise.
+ */
+@Composable
+private fun Modifier.emberGlow(active: Boolean): Modifier {
+    if (!active) return this
+    val pulse by rememberInfiniteTransition(label = "ember").animateFloat(
+        initialValue = 0.16f, targetValue = 0.34f,
+        animationSpec = infiniteRepeatable(tween(1400, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "ember-pulse",
+    )
+    return drawBehind {
+        drawRect(
+            Brush.verticalGradient(
+                0f to Color.Transparent,
+                0.35f to Color.Transparent,
+                1f to Palette.ember.copy(alpha = pulse),
+            ),
+        )
+    }
 }
 
 /** Nozzle (or both, on dual-nozzle printers), bed, and the chamber where there's a sensor. */
@@ -231,15 +282,19 @@ fun TempTiles(s: PrinterStatus?, live: Boolean, model: PrinterModel, modifier: M
     val t = LocalBambuType.current
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         temps(s, model).forEach { row ->
-            Panel(Modifier.weight(1f), radius = 16.dp, padding = 14.dp, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            val climbing = live && row.state == HeatState.HeatingUp
+            Panel(
+                Modifier.weight(1f), radius = 16.dp, padding = 14.dp, verticalArrangement = Arrangement.spacedBy(6.dp),
+                surface = Modifier.emberGlow(climbing),
+            ) {
                 val current = row.current
                 val target = row.temp?.target
                 Text(row.label, style = t.caption, color = Palette.muted)
-                Text(Format.temp(current), style = t.metric, color = Palette.text)
+                Text(Format.temp(current), style = t.metric, color = row.readingColor(live))
                 Text(row.caption, style = t.caption, color = Palette.faint)
                 val heating = row.heating
                 val frac = if (heating && target != null && current != null) (current / target).toFloat() else ((current ?: 0.0) / 100.0).toFloat()
-                Bar(frac, if (heating && live) Palette.amber else Palette.idleBar)
+                Bar(frac, if (climbing) Palette.ember else if (heating && live) Palette.amber else Palette.idleBar)
             }
         }
     }
@@ -253,13 +308,16 @@ fun TempList(s: PrinterStatus?, live: Boolean, model: PrinterModel, modifier: Mo
         val rows = temps(s, model)
         rows.forEachIndexed { i, row ->
             val current = row.current
-            val heating = row.heating
-            Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    .emberGlow(live && row.state == HeatState.HeatingUp).padding(vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(row.label, style = t.label, color = Palette.muted)
                     Text(row.caption, style = t.caption, color = Palette.faint)
                 }
-                Text(Format.temp(current), style = t.metric, color = if (heating && live) Palette.amber else Palette.text)
+                Text(Format.temp(current), style = t.metric, color = row.readingColor(live))
             }
             if (i < rows.lastIndex) Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.hairline))
         }
@@ -273,8 +331,7 @@ fun TempStrip(s: PrinterStatus?, live: Boolean, model: PrinterModel, modifier: M
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         temps(s, model).forEach { row ->
             val current = row.current
-            val heating = row.heating
-            Panel(Modifier.weight(1f), radius = 16.dp, padding = 14.dp) {
+            Panel(Modifier.weight(1f), radius = 16.dp, padding = 14.dp, surface = Modifier.emberGlow(live && row.state == HeatState.HeatingUp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(row.label, style = t.caption, color = Palette.muted)
@@ -283,7 +340,7 @@ fun TempStrip(s: PrinterStatus?, live: Boolean, model: PrinterModel, modifier: M
                             style = t.tiny, color = Palette.faint,
                         )
                     }
-                    Text(Format.temp(current), style = t.metric.copy(fontSize = 24.sp), color = if (heating && live) Palette.amber else Palette.text)
+                    Text(Format.temp(current), style = t.metric.copy(fontSize = 24.sp), color = row.readingColor(live))
                 }
             }
         }

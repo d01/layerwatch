@@ -38,6 +38,10 @@ object Palette {
     val amberSoft = Color(0xFF2A2213)
     val amberText = Color(0xFFF4C77A)
 
+    /** A heater still climbing to its target: hotter than amber's steady hold. */
+    val ember = Color(0xFFFF6B2C)
+    val emberText = Color(0xFFFF9A5C)
+
     /** Connection and information. */
     val blue = Color(0xFF8AB8FF)
     val onBlue = Color(0xFF0B1A2E)

@@ -37,8 +37,32 @@ enum class SpeedLevel(val code: Int, val label: String, val percent: Int) {
 }
 
 data class Temperature(val current: Double?, val target: Double?) {
+    /** The heater is on: there's a target to reach or hold. */
     val isHeating get() = (target ?: 0.0) > 0.0
+
+    /**
+     * Where the reading is relative to the target. The printer reports no heater duty, so
+     * this is inferred; [HOLD_MARGIN_C] absorbs the few degrees a held heater wanders (a
+     * nozzle held at 255 reads 251 to 256).
+     */
+    val heatState: HeatState
+        get() {
+            val t = target ?: 0.0
+            val c = current ?: return if (t > 0.0) HeatState.Holding else HeatState.Off
+            return when {
+                t <= 0.0 -> HeatState.Off
+                t - c > HOLD_MARGIN_C -> HeatState.HeatingUp
+                c - t > HOLD_MARGIN_C -> HeatState.CoolingDown
+                else -> HeatState.Holding
+            }
+        }
+
+    companion object {
+        const val HOLD_MARGIN_C = 3.0
+    }
 }
+
+enum class HeatState { Off, HeatingUp, Holding, CoolingDown }
 
 /** A Health Management System alert: `attr` and `code` combine into the 16-hex-digit id. */
 data class HmsAlert(val attr: Long, val code: Long) {

@@ -30,6 +30,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -243,7 +245,7 @@ private data class TempRow(val label: String, val temp: Temperature?, val passiv
  * target. Nothing is drawn (or animated) otherwise.
  */
 @Composable
-private fun Modifier.emberGlow(active: Boolean): Modifier {
+private fun Modifier.emberGlow(active: Boolean, bleed: Dp = 0.dp): Modifier {
     if (!active) return this
     val pulse by rememberInfiniteTransition(label = "ember").animateFloat(
         initialValue = 0.16f, targetValue = 0.34f,
@@ -251,12 +253,17 @@ private fun Modifier.emberGlow(active: Boolean): Modifier {
         label = "ember-pulse",
     )
     return drawBehind {
+        // [bleed] widens the band past the row into the card's padding, so it runs edge to
+        // edge instead of starting on the text's own margin.
+        val x = bleed.toPx()
         drawRect(
             Brush.verticalGradient(
                 0f to Color.Transparent,
                 0.35f to Color.Transparent,
                 1f to Palette.ember.copy(alpha = pulse),
             ),
+            topLeft = Offset(-x, 0f),
+            size = Size(size.width + 2 * x, size.height),
         )
     }
 }
@@ -300,17 +307,19 @@ fun TempTiles(s: PrinterStatus?, live: Boolean, model: PrinterModel, modifier: M
     }
 }
 
+private val LIST_PADDING = 18.dp
+
 /** Stacked rows in one panel (unfolded side column). */
 @Composable
 fun TempList(s: PrinterStatus?, live: Boolean, model: PrinterModel, modifier: Modifier = Modifier) {
     val t = LocalBambuType.current
-    Panel(modifier, padding = 18.dp) {
+    Panel(modifier, padding = LIST_PADDING) {
         val rows = temps(s, model)
         rows.forEachIndexed { i, row ->
             val current = row.current
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                    .emberGlow(live && row.state == HeatState.HeatingUp).padding(vertical = 10.dp),
+                Modifier.fillMaxWidth()
+                    .emberGlow(live && row.state == HeatState.HeatingUp, bleed = LIST_PADDING).padding(vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {

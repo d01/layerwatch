@@ -187,6 +187,10 @@ data class PrinterStatus(
      */
     val commandsLocked: Boolean,
     val supportsRemoteDrying: Boolean = false,
+    /** Firmware accepts `skip_objects` (`fun` bit 49, as Bambu Studio checks). */
+    val supportsSkipObjects: Boolean = false,
+    /** `identify_id`s of objects skipped on the running plate (`s_obj`). */
+    val skippedObjects: Set<Int> = emptySet(),
 ) {
     val printError: String? get() =
         printErrorCode.takeIf { it != 0L }?.let { "%08X".format(it).chunked(4).joinToString("_") }
@@ -232,6 +236,8 @@ data class PrinterStatus(
             amsMapping = (p["mapping"] as? JsonArray).orEmpty().mapNotNull { it.int() },
             liveview = (p["ipcam"] as? JsonObject)?.let { Liveview.from(it.str("rtsp_url")) },
             commandsLocked = p.str("fun")?.toLongOrNull(16)?.let { (it ushr 29) and 1L == 1L } ?: false,
+            supportsSkipObjects = p.str("fun")?.toLongOrNull(16)?.let { (it ushr 49) and 1L == 1L } ?: false,
+            skippedObjects = (p["s_obj"] as? JsonArray).orEmpty().mapNotNull { it.int() }.toSet(),
             supportsRemoteDrying = p.str("fun2")?.toLongOrNull(16)?.let { (it ushr 5) and 1L == 1L } ?: false,
         )
 

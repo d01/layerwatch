@@ -22,7 +22,7 @@ import kotlin.math.min
  * A simulated printer, so the app can be explored without one (and reviewed by people
  * who don't own a Bambu printer). It loops through a short print of the bundled demo job
  * [JOB_NAME] — heating, printing [LAYERS] layers, finished, idle — and responds to the
- * light, pause, resume, stop and speed controls.
+ * light, pause, resume, stop, speed and skip-object controls.
  *
  * It emits genuine `push_status` reports through [ReportMerger] and [PrinterStatus.from],
  * so the demo exercises the same parsing as a real printer.
@@ -48,6 +48,7 @@ class DemoPrinter(
     private var cancelledAtSec: Double? = null
     private var light = true
     private var speed = SpeedLevel.Standard
+    private var skipped = emptySet<Int>()
     /** Unique per simulated print, so history never mistakes a new demo run for an old one. */
     private var taskId = newTaskId()
 
@@ -80,6 +81,7 @@ class DemoPrinter(
     override fun resume(): Boolean = act { paused = false }
     override fun stopPrint(): Boolean = act { if (printing() || paused) { cancelledAtSec = phaseSec; paused = false } }
     override fun setSpeed(level: SpeedLevel): Boolean = act { speed = level }
+    override fun skipObjects(ids: List<Int>): Boolean = act { if (printing() || paused) skipped = skipped + ids }
 
     private fun act(change: () -> Unit): Boolean {
         change()
@@ -103,6 +105,7 @@ class DemoPrinter(
         phaseSec = 0.0
         cancelledAtSec = null
         paused = false
+        skipped = emptySet()
         taskId = newTaskId()
     }
 
@@ -185,7 +188,9 @@ class DemoPrinter(
                 put("wifi_signal", "-52dBm")
                 put("nozzle_diameter", "0.8")
                 putJsonArray("mapping") { add(JsonPrimitive(2)) }
+                put("fun", "2000000000000") // bit 49: skip objects
                 put("fun2", "0")
+                putJsonArray("s_obj") { skipped.forEach { add(JsonPrimitive(it)) } }
                 putJsonObject("ams") {
                     put("tray_now", if (active) "2" else "255")
                     putJsonArray("ams") {

@@ -18,6 +18,11 @@ class PrinterCommandsTest {
         PrinterCommands.speed(3, SpeedLevel.Sport),
     )
 
+    @Test fun skipObjectsMatchesBambuStudio() = assertEquals(
+        """{"print":{"sequence_id":"5","command":"skip_objects","obj_list":[270,373]}}""",
+        PrinterCommands.skipObjects(5, listOf(270, 373)),
+    )
+
     @Test fun chamberLight() = assertEquals(
         """{"system":{"sequence_id":"4","command":"ledctrl","led_node":"chamber_light","led_mode":"off",""" +
             """"led_on_time":500,"led_off_time":500,"loop_times":0,"interval_time":0}}""",

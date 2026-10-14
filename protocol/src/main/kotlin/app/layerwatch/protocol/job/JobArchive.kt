@@ -36,6 +36,8 @@ data class SliceInfo(
     val filaments: List<SliceFilament>,
     val objects: List<SliceObject>,
     val warnings: List<SliceWarning>,
+    /** Sliced with object labels, which the printer needs to skip objects (null if unsaid). */
+    val labelObjects: Boolean? = null,
 )
 
 data class PlateObject(val id: Int, val name: String, val areaMm2: Double?, val layerHeight: Double?)
@@ -197,6 +199,7 @@ object JobArchive {
                 val code = it.getAttribute("msg")
                 SliceWarning(code, warningText(code))
             },
+            labelObjects = m["label_object_enabled"]?.let { it == "true" },
         )
     }.getOrNull()
 

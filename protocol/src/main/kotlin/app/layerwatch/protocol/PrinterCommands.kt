@@ -1,7 +1,9 @@
 package app.layerwatch.protocol
 
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
 /**
@@ -20,6 +22,18 @@ object PrinterCommands {
             put("sequence_id", seq.toString())
             put("command", "print_speed")
             put("param", level.code.toString())
+        }
+    }.toString()
+
+    /**
+     * Skip objects on the running plate, by `identify_id` (as in slice_info and the pick
+     * mask). The printer adds them to `s_obj`; already-skipped ids needn't be resent.
+     */
+    fun skipObjects(seq: Long, ids: List<Int>) = buildJsonObject {
+        putJsonObject("print") {
+            put("sequence_id", seq.toString())
+            put("command", "skip_objects")
+            putJsonArray("obj_list") { ids.forEach { add(JsonPrimitive(it)) } }
         }
     }.toString()
 

@@ -139,6 +139,28 @@ object JobArchive {
         )
     }
 
+    /**
+     * Plates whose G-code [file] holds. A file sent from the slicer carries only the plate
+     * being printed, so re-sending another plate of the same project replaces it.
+     */
+    fun plates(file: File): List<Int> = ZipFile(file).use { zip ->
+        zip.entries().asSequence().mapNotNull { e ->
+            PLATE_GCODE.matchEntire(e.name)?.groupValues?.get(1)?.toIntOrNull()
+        }.sorted().toList()
+    }
+
+    /** The `; total layer number:` header of a plate's G-code, without parsing the toolpaths. */
+    fun headerLayers(file: File, plate: Int): Int? = ZipFile(file).use { zip ->
+        val e = zip.getEntry("Metadata/plate_$plate.gcode") ?: return null
+        zip.getInputStream(e).bufferedReader(Charsets.UTF_8).useLines { lines ->
+            lines.take(HEADER_LINES).firstOrNull { it.startsWith("; total layer number:") }
+                ?.substringAfter(':')?.trim()?.toIntOrNull()
+        }
+    }
+
+    private val PLATE_GCODE = Regex("""Metadata/plate_(\d+)\.gcode""")
+    private const val HEADER_LINES = 400
+
     internal fun parseSliceInfo(bytes: ByteArray, plate: Int): SliceInfo? = runCatching {
         val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(bytes.inputStream())
         val headers = doc.getElementsByTagName("header_item").elements()

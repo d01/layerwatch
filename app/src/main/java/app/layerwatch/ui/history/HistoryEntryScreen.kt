@@ -31,6 +31,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -91,8 +92,9 @@ fun HistoryEntryScreen(record: PrintRecord, onBack: () -> Unit) {
     var playing by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf<String?>(null) }
     var showDetails by remember { mutableStateOf(false) }
-    if (showDetails && record.jobName != null) {
-        ArchivedDetailsScreen(record.jobName, onBack = { showDetails = false })
+    val hasDetails by produceState(false, record) { value = app.jobs.hasArchived(record) }
+    if (showDetails && hasDetails) {
+        ArchivedDetailsScreen(record, onBack = { showDetails = false })
         return
     }
     val snapshot = remember(record) {
@@ -200,7 +202,7 @@ fun HistoryEntryScreen(record: PrintRecord, onBack: () -> Unit) {
             }
 
             Panel(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                if (record.jobName != null && app.jobs.isCached(record.jobName)) {
+                if (hasDetails) {
                     DetailsLink { showDetails = true }
                 }
                 summaryRows(record).forEach { (k, v) ->

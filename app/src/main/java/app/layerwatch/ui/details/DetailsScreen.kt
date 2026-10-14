@@ -67,7 +67,7 @@ fun DetailsScreen(onBack: () -> Unit, vm: DetailsViewModel = viewModel()) {
         onDispose(release)
     }
     val state by vm.state.collectAsStateWithLifecycle()
-    DetailsContent(state, onBack, vm::retry)
+    DetailsContent(state, onBack, vm::retry, vm::skipObject)
 }
 
 /**
@@ -87,7 +87,7 @@ fun ArchivedDetailsScreen(record: PrintRecord, onBack: () -> Unit) {
 }
 
 @Composable
-private fun DetailsContent(state: DetailsState, onBack: () -> Unit, onRetry: () -> Unit) {
+private fun DetailsContent(state: DetailsState, onBack: () -> Unit, onRetry: () -> Unit, onSkip: (Int) -> Unit = {}) {
     val wide = currentWindowAdaptiveInfo().windowSizeClass.minWidthDp >= 600
 
     Column(Modifier.fillMaxSize().background(Palette.ground).safeDrawingPadding()) {
@@ -95,7 +95,7 @@ private fun DetailsContent(state: DetailsState, onBack: () -> Unit, onRetry: () 
         when (val load = state.load) {
             is JobLoad.Ready -> {
                 val images = rememberImages(load.job)
-                if (wide) Wide(state, load.job, images) else Narrow(state, load.job, images)
+                if (wide) Wide(state, load.job, images, onSkip) else Narrow(state, load.job, images, onSkip)
             }
             else -> LoadingOrUnavailable(load, onRetry)
         }
@@ -171,7 +171,7 @@ private fun LoadingOrUnavailable(load: JobLoad, onRetry: () -> Unit) {
 // ---------- layouts ----------
 
 @Composable
-private fun Wide(state: DetailsState, job: JobFile, images: JobImages) {
+private fun Wide(state: DetailsState, job: JobFile, images: JobImages, onSkip: (Int) -> Unit) {
     Row(Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         BuildPanel(state, job, images, Modifier.weight(1.22f).fillMaxHeight(), fill = true)
         Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -181,13 +181,13 @@ private fun Wide(state: DetailsState, job: JobFile, images: JobImages) {
                 FilamentCard(state.filament, job, state.status, Modifier.fillMaxWidth())
             }
             SlicingCard(job, images.render, Modifier.fillMaxWidth(), full = true)
-            ObjectsCard(job, images.top, Modifier.fillMaxWidth())
+            ObjectsCard(job, images.top, Modifier.fillMaxWidth(), state.skip, onSkip)
         }
     }
 }
 
 @Composable
-private fun Narrow(state: DetailsState, job: JobFile, images: JobImages) {
+private fun Narrow(state: DetailsState, job: JobFile, images: JobImages, onSkip: (Int) -> Unit) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -201,7 +201,7 @@ private fun Narrow(state: DetailsState, job: JobFile, images: JobImages) {
             job.gcode?.let { ComingUpCard(upcoming(it, state.currentLayer), Modifier.fillMaxWidth()) }
         }
         SlicingCard(job, images.render, Modifier.fillMaxWidth(), full = true)
-        ObjectsCard(job, images.top, Modifier.fillMaxWidth())
+        ObjectsCard(job, images.top, Modifier.fillMaxWidth(), state.skip, onSkip)
     }
 }
 

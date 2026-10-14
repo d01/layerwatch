@@ -20,4 +20,5 @@ interface PrinterLink {
     fun resume(): Boolean
     fun stopPrint(): Boolean
     fun setSpeed(level: SpeedLevel): Boolean
+    fun skipObjects(ids: List<Int>): Boolean
 }

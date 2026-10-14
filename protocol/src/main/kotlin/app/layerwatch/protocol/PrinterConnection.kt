@@ -112,6 +112,7 @@ class PrinterConnection(
     override fun resume(): Boolean = send(PrinterCommands.resume(nextSequence()))
     override fun stopPrint(): Boolean = send(PrinterCommands.stop(nextSequence()))
     override fun setSpeed(level: SpeedLevel): Boolean = send(PrinterCommands.speed(nextSequence(), level))
+    override fun skipObjects(ids: List<Int>): Boolean = send(PrinterCommands.skipObjects(nextSequence(), ids))
 
     private fun nextSequence() = sequence.getAndIncrement()
 

@@ -29,6 +29,7 @@ class JobArchiveTest {
         assertEquals("#000000", f.colorHex)
         assertEquals(1.23, f.usedM!!, 1e-9)
         assertEquals(SliceObject(270, "vent_blade.stl", false), s.objects.single())
+        assertEquals(true, s.labelObjects)
     }
 
     @Test fun plateSettingsAndImages() {

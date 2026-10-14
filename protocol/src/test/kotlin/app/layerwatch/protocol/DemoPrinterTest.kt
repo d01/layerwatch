@@ -56,4 +56,16 @@ class DemoPrinterTest {
         assertEquals(SpeedLevel.Sport, demo.status.value!!.speed)
         assertEquals(AmsType.Ams2Pro, demo.status.value!!.ams.single().type)
     }
+
+    @Test fun skipObjectsOnlyWhilePrintingAndClearsNextRun() {
+        demo.emit()
+        assertEquals(true, demo.status.value!!.supportsSkipObjects)
+        demo.skipObjects(listOf(270)) // still preparing
+        assertEquals(emptySet<Int>(), demo.status.value!!.skippedObjects)
+        step(60)
+        demo.skipObjects(listOf(270))
+        assertEquals(setOf(270), demo.status.value!!.skippedObjects)
+        step(400) // past the cycle's end
+        assertEquals(emptySet<Int>(), demo.status.value!!.skippedObjects)
+    }
 }

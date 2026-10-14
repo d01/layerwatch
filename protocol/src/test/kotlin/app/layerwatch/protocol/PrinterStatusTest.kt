@@ -154,4 +154,15 @@ class PrinterStatusTest {
         assertEquals(708, drying.dryMinutesLeft)
         assertEquals(true, drying.isDrying)
     }
+
+    @Test fun skipObjects() {
+        // This X1C's real `fun` (firmware 01.12): bit 49 set, bit 29 (signed commands) clear.
+        val s = status("""{"print":{"command":"push_status","fun":"20011830F9CFB","s_obj":[270,"373"]}}""")
+        assertEquals(true, s.supportsSkipObjects)
+        assertEquals(false, s.commandsLocked)
+        assertEquals(setOf(270, 373), s.skippedObjects)
+        val bare = status("""{"print":{"command":"push_status","fun":"1830F9CFB","s_obj":[]}}""")
+        assertEquals(false, bare.supportsSkipObjects)
+        assertEquals(emptySet<Int>(), bare.skippedObjects)
+    }
 }

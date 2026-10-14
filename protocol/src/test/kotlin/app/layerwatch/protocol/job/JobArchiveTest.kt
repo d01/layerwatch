@@ -128,6 +128,14 @@ class JobArchiveTest {
         assertTrue(pts.map { g.points[it * 2 + 1] }.all { it >= -1e-3f }) // went through +Y (CCW)
     }
 
+    @Test fun platesAndHeaderLayersWithoutParsing() {
+        val f = fixture()
+        // A file sent from the slicer carries only the plate being printed.
+        assertEquals(listOf(1), JobArchive.plates(f))
+        assertEquals(17, JobArchive.headerLayers(f, 1))
+        assertEquals(null, JobArchive.headerLayers(f, 2))
+    }
+
     @Test fun pickMaskDecoding() = assertEquals(373, JobFile.pickObjectId(117, 1, 0))
 
     /** A large real job (22 MB of G-code), when BAMBU_BIG_JOB points at one; not committed. */

@@ -46,6 +46,7 @@ import app.layerwatch.R
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.platform.LocalContext
 import app.layerwatch.LayerwatchApp
+import app.layerwatch.history.PrintRecord
 import app.layerwatch.job.JobKey
 import app.layerwatch.job.JobLoad
 import app.layerwatch.protocol.job.JobFile
@@ -74,12 +75,12 @@ fun DetailsScreen(onBack: () -> Unit, vm: DetailsViewModel = viewModel()) {
  * and objects. No live status, schedule or forecast.
  */
 @Composable
-fun ArchivedDetailsScreen(jobName: String, onBack: () -> Unit) {
+fun ArchivedDetailsScreen(record: PrintRecord, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     val graph = LocalContext.current.applicationContext as LayerwatchApp
-    val key = JobKey(jobName, 1)
-    val load by produceState<JobLoad>(JobLoad.Parsing(key), jobName) {
-        value = graph.jobs.readCached(jobName)?.let { JobLoad.Ready(key, it) }
+    val key = JobKey(record.jobName ?: "Untitled print", 1)
+    val load by produceState<JobLoad>(JobLoad.Parsing(key), record) {
+        value = graph.jobs.readArchived(record)
             ?: JobLoad.Unavailable(key, "This job's file is no longer cached on the phone.")
     }
     DetailsContent(DetailsState(load = load), onBack, onRetry = {})

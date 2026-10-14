@@ -53,6 +53,9 @@ class FtpsClient private constructor(
 
     fun size(path: String): Long? = runCatching { command("SIZE $path", 213).substringAfter(' ').trim().toLong() }.getOrNull()
 
+    /** Last-modified time as `MDTM` reports it (`YYYYMMDDhhmmss`, UTC), or null if unsupported. */
+    fun modified(path: String): String? = runCatching { command("MDTM $path", 213).trim().takeIf { it.isNotEmpty() } }.getOrNull()
+
     /**
      * Streams [path] into [out]; returns bytes copied. [onProgress] gets running totals
      * (including [offset]). A non-zero [offset] resumes a partial download via REST.

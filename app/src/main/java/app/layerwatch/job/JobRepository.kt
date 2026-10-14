@@ -1,6 +1,8 @@
 package app.layerwatch.job
 
 import android.util.Log
+import app.layerwatch.history.PrintHistory
+import app.layerwatch.history.PrintRecord
 import app.layerwatch.printer.PrinterRepository
 import app.layerwatch.printer.PrinterTls
 import app.layerwatch.protocol.ftps.FtpsClient
@@ -21,8 +23,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** Which job file and plate is printing. */
-data class JobKey(val name: String, val plate: Int)
+/** Which job file and plate is printing; [taskId] tells runs of the same file apart. */
+data class JobKey(val name: String, val plate: Int, val taskId: String? = null)
+
+/** A job file on the phone and the plate a print used from it. */
+private data class CachedJob(val file: File, val plate: Int)
 
 sealed interface JobLoad {
     data object None : JobLoad
@@ -35,6 +40,11 @@ sealed interface JobLoad {
 /**
  * Fetches the running job's `.gcode.3mf` from the printer's storage (FTPS), once, into a
  * small on-phone cache, and parses it for the details screen, forecasts and markers.
+ *
+ * The printer keeps one file per job name, and re-slicing or sending another plate of the
+ * same project replaces it (a sent file carries only the plate being printed). So each
+ * version is cached separately, keyed by the printer's modification time, and each run
+ * remembers which version and plate it printed — history shows what actually printed.
  *
  * Runs whenever printer status flows with an active job, i.e. while the app is visible
  * or the print monitor is running — never from a frozen background process.
@@ -61,7 +71,7 @@ class JobRepository(
         scope.launch(Dispatchers.IO) { printer.status.collect(::recordLayer) }
         scope.launch {
             printer.status
-                .map { s -> s?.takeIf { it.jobState.isActive }?.jobName?.let { JobKey(it, s.plateIndex ?: 1) } }
+                .map { s -> s?.takeIf { it.jobState.isActive }?.jobName?.let { JobKey(it, s.plateIndex ?: 1, s.taskId) } }
                 .distinctUntilChanged()
                 .collect { key -> if (key != null) load(key) }
         }
@@ -73,7 +83,7 @@ class JobRepository(
      * is kept too, as the anchor for the slicer's plan.
      */
     private fun recordLayer(s: PrinterStatus?) {
-        val key = s?.takeIf { it.jobState.isActive }?.jobName?.let { JobKey(it, s.plateIndex ?: 1) } ?: return
+        val key = s?.takeIf { it.jobState.isActive }?.jobName?.let { JobKey(it, s.plateIndex ?: 1, s.taskId) } ?: return
         val layer = s.layer?.takeIf { it > 0 } ?: return
         // The same file printed again is a new task, with its own pace and plan anchor.
         val run = key to s.taskId
@@ -100,7 +110,7 @@ class JobRepository(
 
     private fun samplesFile(key: JobKey, taskId: String?) = File(
         dir.apply { mkdirs() },
-        localFile(key).name.removeSuffix(".gcode.3mf") + (taskId?.let { "-task-" + it.filter(Char::isLetterOrDigit) } ?: "") + ".layers",
+        safeName(key.name) + (taskId?.let { "-task-" + it.filter(Char::isLetterOrDigit) } ?: "") + ".layers",
     )
 
     private fun loadSamples(key: JobKey, taskId: String?): List<LayerSample> = runCatching {
@@ -110,12 +120,35 @@ class JobRepository(
         }
     }.getOrDefault(emptyList())
 
-    /** A previously downloaded job, for viewing details from history. Null if not cached. */
-    suspend fun readCached(name: String, plate: Int = 1): JobFile? = kotlinx.coroutines.withContext(Dispatchers.IO) {
-        cached(JobKey(name, plate))?.let { f -> runCatching { JobArchive.read(f, plate) }.getOrNull() }
+    /** Whether the job file [record] printed is still on the phone. */
+    suspend fun hasArchived(record: PrintRecord): Boolean = withContext(Dispatchers.IO) { archived(record) != null }
+
+    /** The job file [record] printed, for viewing its details from history. Null if not cached. */
+    suspend fun readArchived(record: PrintRecord): JobLoad.Ready? = withContext(Dispatchers.IO) {
+        val name = record.jobName ?: return@withContext null
+        val found = archived(record) ?: return@withContext null
+        runCatching { JobArchive.read(found.file, found.plate) }.getOrNull()
+            ?.let { JobLoad.Ready(JobKey(name, found.plate), it) }
     }
 
-    fun isCached(name: String, plate: Int = 1): Boolean = cached(JobKey(name, plate)) != null
+    /**
+     * The run's own record when there is one. Otherwise (prints from before runs were
+     * recorded, or without a task id) a cached file of the same name, but only if its
+     * plate's layer count matches the record — a same-named file may be another plate or
+     * an older slice.
+     */
+    private fun archived(record: PrintRecord): CachedJob? {
+        readRun(record.key)?.let { return it }
+        val name = record.jobName ?: return null
+        return cachedVersions(name).firstNotNullOfOrNull { f ->
+            runCatching {
+                val plates = JobArchive.plates(f)
+                plates.firstOrNull { p ->
+                    if (record.totalLayers == null) plates.size == 1 else JobArchive.headerLayers(f, p) == record.totalLayers
+                }?.let { CachedJob(f, it) }
+            }.getOrNull()
+        }
+    }
 
     /** Try again after a failure (e.g. the printer was unreachable). */
     fun retry() {
@@ -128,7 +161,11 @@ class JobRepository(
         loading?.cancel()
         loading = scope.launch(Dispatchers.IO) {
             try {
-                val file = cached(key) ?: download(key) ?: return@launch
+                val file = key.taskId?.let { readRun(PrintHistory.keyFor(it, key.name, 0)) }?.file
+                    ?: download(key)
+                    ?: return@launch
+                if (key.plate !in JobArchive.plates(file)) error("The printer's job file doesn't include plate ${key.plate}")
+                key.taskId?.let { writeRun(PrintHistory.keyFor(it, key.name, 0), CachedJob(file, key.plate)) }
                 _state.value = JobLoad.Parsing(key)
                 val started = System.currentTimeMillis()
                 val job = withContext(Dispatchers.Default) { JobArchive.read(file, key.plate) }
@@ -144,9 +181,33 @@ class JobRepository(
         }
     }
 
-    private fun localFile(key: JobKey) = File(dir, key.name.replace(Regex("[^A-Za-z0-9._ -]"), "_") + ".gcode.3mf")
+    private fun safeName(name: String) = name.replace(Regex("[^A-Za-z0-9._ -]"), "_")
 
-    private fun cached(key: JobKey): File? = localFile(key).takeIf { it.exists() && it.length() > 0 }
+    /** One version of a job file; `~` can't occur in a safe name, so it separates the version. */
+    private fun versionFile(name: String, version: String) = File(dir, "${safeName(name)}~$version.gcode.3mf")
+
+    /** Job name part of a cached file's name (older caches have no version). */
+    private fun baseOf(f: File) = f.name.removeSuffix(".gcode.3mf").substringBefore('~')
+
+    /** Cached files for [name], most recently used first. */
+    private fun cachedVersions(name: String): List<File> {
+        val base = safeName(name)
+        return dir.listFiles { f -> f.name.endsWith(".gcode.3mf") && f.length() > 0 && baseOf(f) == base }
+            .orEmpty().sortedByDescending { it.lastModified() }
+    }
+
+    private fun runFile(runKey: String) = File(dir, "run-" + runKey.filter { it.isLetterOrDigit() || it == '-' } + ".ref")
+
+    /** Which cached file and plate a run printed; null if unknown or since pruned. */
+    private fun readRun(runKey: String): CachedJob? = runCatching {
+        val (name, plate) = runFile(runKey).readLines().takeIf { it.size >= 2 } ?: return null
+        CachedJob(File(dir, name).takeIf { it.exists() && it.length() > 0 } ?: return null, plate.toInt())
+    }.getOrNull()
+
+    private fun writeRun(runKey: String, job: CachedJob) {
+        if (readRun(runKey) == job) return
+        runCatching { runFile(runKey).writeText("${job.file.name}\n${job.plate}\n") }
+    }
 
     /** Finds and downloads the job file; null (with state set) if it isn't on the printer. */
     private fun download(key: JobKey): File? {
@@ -161,14 +222,17 @@ class JobRepository(
                 _state.value = JobLoad.Unavailable(key, "This job's file isn't on the printer's storage")
                 return null
             }
+            // The modification time tells this version apart from earlier ones of the same name.
+            val version = ftp.modified(path)?.filter(Char::isDigit)?.takeIf { it.isNotEmpty() } ?: "s$size"
+            val file = versionFile(key.name, version)
+            if (file.length() == size) return file
             dir.mkdirs()
-            val part = File(dir, "${localFile(key).name}.part")
+            val part = File(dir, "${file.name}.part")
             _state.value = JobLoad.Downloading(key, 0, size)
             part.outputStream().buffered().use { out ->
                 ftp.retrieve(path, out) { n -> _state.value = JobLoad.Downloading(key, n, size) }
             }
             if (part.length() != size) error("Download incomplete: ${part.length()} of $size bytes")
-            val file = localFile(key)
             part.renameTo(file)
             prune()
             Log.i(TAG, "downloaded $path ($size bytes)")
@@ -180,22 +244,26 @@ class JobRepository(
     private fun demoJob(key: JobKey): File? {
         if (key.name != DemoPrinter.JOB_NAME) return null
         dir.mkdirs()
-        val out = localFile(key)
+        val out = versionFile(key.name, "demo")
         assets.open("demo/${DemoPrinter.JOB_NAME}.gcode.3mf").use { input -> out.outputStream().use { input.copyTo(it) } }
         return out
     }
 
-    /** Keep the most recently used job files only. */
+    /** Keep the most recently used job files only, and the run records and layer samples that go with them. */
     private fun prune() {
         dir.listFiles { f -> f.name.endsWith(".gcode.3mf") }
             ?.sortedByDescending { it.lastModified() }
             ?.drop(MAX_CACHED)
-            ?.forEach { stale ->
-                stale.delete()
-                val base = stale.name.removeSuffix(".gcode.3mf")
-                dir.listFiles { f -> f.name.endsWith(".layers") && (f.name == "$base.layers" || f.name.startsWith("$base-task-")) }
-                    ?.forEach { it.delete() }
-            }
+            ?.forEach { it.delete() }
+        val kept = dir.listFiles { f -> f.name.endsWith(".gcode.3mf") }.orEmpty()
+        val keptNames = kept.mapTo(HashSet()) { it.name }
+        val keptBases = kept.mapTo(HashSet(), ::baseOf)
+        dir.listFiles { f -> f.name.endsWith(".ref") }.orEmpty()
+            .filter { ref -> runCatching { ref.readLines().first() }.getOrNull() !in keptNames }
+            .forEach { it.delete() }
+        dir.listFiles { f -> f.name.endsWith(".layers") }.orEmpty()
+            .filter { f -> f.name.removeSuffix(".layers").let { b -> keptBases.none { b == it || b.startsWith("$it-task-") } } }
+            .forEach { it.delete() }
     }
 
     private companion object {

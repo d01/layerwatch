@@ -24,6 +24,7 @@ class FakePrinter(
 
     val connects = AtomicInteger()
     val pushalls = AtomicInteger()
+    val pings = AtomicInteger()
     val requests = CopyOnWriteArrayList<String>()
     @Volatile var silent = false
     private val clients = CopyOnWriteArrayList<Socket>()
@@ -73,7 +74,7 @@ class FakePrinter(
                         reports.forEach { out.publish("device/$serial/report", it) }
                     }
                 }
-                12 -> out.packet(0xD0, ByteArray(0)) // PINGRESP
+                12 -> { pings.incrementAndGet(); out.packet(0xD0, ByteArray(0)) } // PINGRESP
                 14 -> return // DISCONNECT
             }
         }

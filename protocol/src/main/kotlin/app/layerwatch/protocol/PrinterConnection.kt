@@ -162,16 +162,26 @@ class PrinterConnection(
         }
     }
 
-    /** Runs until the session dies. [onReport] fires after each accepted status report. */
+    /**
+     * Runs until the session dies. [onReport] fires after each accepted status report.
+     *
+     * Pings on a fixed schedule, not only when the printer goes quiet: while printing it
+     * reports every second, so a silence-triggered ping never fires, and the printer drops
+     * a client it hasn't heard from within 1.5 × keep-alive (seen as a reconnect every ~95 s).
+     */
     private fun readLoop(s: MqttSession, onReport: () -> Unit) {
         var lastRx = clock()
+        var lastPing = clock()
         while (true) {
+            if (clock() - lastPing >= timing.pingIntervalMs) {
+                s.ping()
+                lastPing = clock()
+            }
             val packet = try {
                 s.readPacket()
             } catch (_: SocketTimeoutException) {
                 val silent = clock() - lastRx
                 if (silent >= timing.deadAfterMs) throw IOException("No response from printer for ${silent / 1000}s")
-                s.ping()
                 continue
             }
             lastRx = clock()

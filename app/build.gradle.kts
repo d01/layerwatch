@@ -11,8 +11,8 @@ android {
         applicationId = "app.layerwatch"
         minSdk = 35
         targetSdk = 37
-        versionCode = 7
-        versionName = "0.1.6"
+        versionCode = 8
+        versionName = "0.1.7"
     }
 
     // Play upload key, from ~/.gradle/gradle.properties (never the repo). Without it,

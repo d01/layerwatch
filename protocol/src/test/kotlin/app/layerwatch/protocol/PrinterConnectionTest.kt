@@ -45,6 +45,20 @@ class PrinterConnectionTest {
         c.stop()
     }
 
+    /** A printing printer reports every second; the client must still ping, or the broker drops it. */
+    @Test fun pingsEvenWhileReportsKeepArriving() = runBlocking {
+        val c = connection()
+        c.start()
+        withTimeout(5_000) { c.status.first { it != null } }
+        // Reports every 50 ms, well inside the 200 ms ping interval, so the read never times out.
+        repeat(20) {
+            printer.publishToAll(Fixtures.captureReports.last())
+            kotlinx.coroutines.delay(50)
+        }
+        assertTrue("pings: ${printer.pings.get()}", printer.pings.get() >= 3)
+        c.stop()
+    }
+
     @Test fun reconnectsAndRefreshesAfterDrop() = runBlocking {
         val c = connection()
         c.start()

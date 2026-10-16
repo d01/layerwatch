@@ -10,14 +10,16 @@ object Links {
     const val HELP = "https://d01.github.io/layerwatch/help.html"
     const val NEW_ISSUE = "https://github.com/d01/layerwatch/issues/new"
 
+    /** The released app's id, not packageName: debug builds carry a ".debug" suffix that has no listing. */
+    private const val PLAY_ID = "app.layerwatch"
+
     fun open(context: Context, url: String) {
         view(context, url)
     }
 
     /** The Play Store app's page for Layerwatch, or the web listing on phones without it. */
     fun openPlayListing(context: Context) {
-        val id = context.packageName
-        if (!view(context, "market://details?id=$id")) view(context, "https://play.google.com/store/apps/details?id=$id")
+        if (!view(context, "market://details?id=$PLAY_ID")) view(context, "https://play.google.com/store/apps/details?id=$PLAY_ID")
     }
 
     private fun view(context: Context, url: String): Boolean = try {

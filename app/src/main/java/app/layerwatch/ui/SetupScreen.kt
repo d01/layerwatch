@@ -26,6 +26,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.semantics.Role
@@ -34,6 +35,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import app.layerwatch.ui.components.ControlButton
 import app.layerwatch.ui.components.ControlStyle
+import app.layerwatch.ui.components.Links
 import app.layerwatch.ui.theme.LocalBambuType
 import app.layerwatch.ui.theme.Palette
 
@@ -76,6 +78,13 @@ fun SetupScreen(
                     style = t.body, color = Palette.muted,
                 )
                 PrinterChecklist()
+                val context = LocalContext.current
+                Text(
+                    "Need help with these settings?", style = t.label, color = Palette.amber,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                        .clickable(role = Role.Button, onClickLabel = "Open the setup guide") { Links.open(context, Links.HELP) }
+                        .padding(vertical = 8.dp),
+                )
             }
             val colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = Palette.amber, unfocusedBorderColor = Palette.outline,

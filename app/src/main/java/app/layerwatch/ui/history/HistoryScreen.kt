@@ -107,6 +107,7 @@ private fun HistoryRow(r: PrintRecord, history: PrintHistory) {
     val (label, color) = when (r.outcome) {
         Outcome.Finished -> "Finished" to Palette.blue
         Outcome.Failed -> "Failed" to Palette.danger
+        Outcome.Stopped -> "Stopped" to Palette.muted
         Outcome.InProgress -> "In progress" to Palette.amber
         Outcome.Unknown -> "Ended" to Palette.muted
     }

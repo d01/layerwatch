@@ -17,7 +17,7 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import java.io.File
 
-enum class Outcome { InProgress, Finished, Failed, Unknown }
+enum class Outcome { InProgress, Finished, Failed, Stopped, Unknown }
 
 /** One print the monitor followed. */
 data class PrintRecord(

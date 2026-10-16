@@ -195,7 +195,19 @@ data class PrinterStatus(
     val printError: String? get() =
         printErrorCode.takeIf { it != 0L }?.let { "%08X".format(it).chunked(4).joinToString("_") }
 
+    /** [printErrorCode] when it explains a problem; 0 for none and for "the task was canceled". */
+    val printFault: Long get() = printErrorCode.takeIf { it !in CANCELED } ?: 0L
+
+    /**
+     * The job ended FAILED with no fault and no error alert: someone stopped it, from the
+     * printer, a slicer or this app. The printer doesn't say which, nor that it was on purpose.
+     */
+    val isStopped: Boolean get() = jobState == JobState.Failed && printFault == 0L && hms.none { it.level.isError }
+
     companion object {
+        /** `print_error` codes for a job stopped on request ("The task was canceled.", "Job was cancelled."). */
+        private val CANCELED = setOf(0x0300400CL, 0x0500400EL)
+
         fun from(p: JsonObject) = PrinterStatus(
             jobState = JobState.parse(p.str("gcode_state")),
             stage = p.int("stg_cur")?.let(PrintStage::fromCode),

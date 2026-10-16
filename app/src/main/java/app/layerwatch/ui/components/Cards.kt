@@ -194,6 +194,7 @@ fun ReadyCard(
             val (label, color) = when (r.outcome) {
                 app.layerwatch.history.Outcome.Finished -> "finished" to Palette.blue
                 app.layerwatch.history.Outcome.Failed -> "failed" to Palette.danger
+                app.layerwatch.history.Outcome.Stopped -> "stopped" to Palette.muted
                 else -> "ended" to Palette.muted
             }
             Row(

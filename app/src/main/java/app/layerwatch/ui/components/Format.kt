@@ -38,7 +38,7 @@ object Format {
         JobState.Preparing -> s.stage?.label ?: "Preparing"
         JobState.Slicing -> "Slicing"
         JobState.Finished -> "Finished"
-        JobState.Failed -> "Failed"
+        JobState.Failed -> if (s.isStopped) "Stopped" else "Failed"
         JobState.Idle -> "Idle"
         JobState.Unknown -> "—"
     }

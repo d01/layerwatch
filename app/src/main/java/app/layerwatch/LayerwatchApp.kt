@@ -41,7 +41,7 @@ class LayerwatchApp : Application() {
                 val key = PrintHistory.keyFor(s.taskId, s.jobName, 0)
                 val outcome = when (s.jobState) {
                     JobState.Finished -> Outcome.Finished
-                    JobState.Failed -> Outcome.Failed
+                    JobState.Failed -> if (s.isStopped) Outcome.Stopped else Outcome.Failed
                     else -> null
                 }
                 history.reconcile(activeKey = key.takeIf { s.jobState.isActive }, reportedKey = key, reportedOutcome = outcome, nowMs = System.currentTimeMillis())

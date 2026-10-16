@@ -8,6 +8,8 @@ sealed interface PrintEvent {
     data class FirstLayerDone(override val jobName: String?) : PrintEvent
     data class Finished(override val jobName: String?) : PrintEvent
     data class Failed(override val jobName: String?, val printError: String?) : PrintEvent
+    /** Ended FAILED without a reason ([PrinterStatus.isStopped]): stopped, not broken. */
+    data class Stopped(override val jobName: String?) : PrintEvent
     /** [byPrinter] is false when the stage says the user paused it (from any client). */
     data class Paused(override val jobName: String?, val reason: String, val byPrinter: Boolean) : PrintEvent
     data class Resumed(override val jobName: String?) : PrintEvent
@@ -61,7 +63,9 @@ class PrintEventDetector {
         }
         if (was == JobState.Paused && now == JobState.Running) events += PrintEvent.Resumed(job)
         if (was.isActive && now == JobState.Finished) events += PrintEvent.Finished(job)
-        if (was != JobState.Failed && now == JobState.Failed) events += PrintEvent.Failed(job, s.printError)
+        if (was != JobState.Failed && now == JobState.Failed) {
+            events += if (s.isStopped) PrintEvent.Stopped(job) else PrintEvent.Failed(job, s.printError)
+        }
 
         val prevLayer = prev.layer
         val layer = s.layer

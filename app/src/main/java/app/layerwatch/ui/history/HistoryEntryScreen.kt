@@ -245,6 +245,7 @@ private fun summaryRows(r: PrintRecord): List<Pair<String, String>> = listOfNotN
 private fun outcomeLabel(o: Outcome) = when (o) {
     Outcome.Finished -> "Finished" to Palette.blue
     Outcome.Failed -> "Failed" to Palette.danger
+    Outcome.Stopped -> "Stopped" to Palette.muted
     Outcome.InProgress -> "In progress" to Palette.amber
     Outcome.Unknown -> "Ended" to Palette.muted
 }

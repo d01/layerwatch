@@ -44,6 +44,8 @@ import kotlin.math.min
 /** Feature colours shared by the layer and 3D views and their legends. */
 object FeatureColors {
     val earlier = Color(0xFF262B30)
+    /** Objects the printer was told to skip: one muted red, whatever the feature. */
+    val skipped = Color(0x99FF5A4F)
     fun of(f: Feature): Color = when (f) {
         Feature.OuterWall -> Color(0xFFF4B04A)
         Feature.InnerWall -> Color(0xFFB8925A)
@@ -83,27 +85,37 @@ object FeatureColors {
     fun isWall(f: Feature) = f in wallLike
 }
 
-/** Builds and caches one Compose [Path] per (layer, feature) — layers are drawn many times while scrubbing. */
-class LayerPaths(private val model: GcodeModel) {
-    private val cache = object : LinkedHashMap<Int, Map<Feature, Path>>(64, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, Map<Feature, Path>>?) = size > 160
+/** One layer's paths by feature, with skipped objects' paths kept apart in [skipped]. */
+class LayerDrawing(val byFeature: Map<Feature, Path>, val skipped: Path?)
+
+/**
+ * Builds and caches one Compose [Path] per (layer, feature) — layers are drawn many times
+ * while scrubbing. Paths of the [skipped] objects go into one path of their own.
+ */
+class LayerPaths(private val model: GcodeModel, private val skipped: Set<Int> = emptySet()) {
+    private val cache = object : LinkedHashMap<Int, LayerDrawing>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, LayerDrawing>?) = size > 160
     }
 
-    fun of(layer: Int): Map<Feature, Path> = cache.getOrPut(layer) {
-        val l = model.layer(layer) ?: return@getOrPut emptyMap()
+    fun of(layer: Int): LayerDrawing = cache.getOrPut(layer) {
+        val l = model.layer(layer) ?: return@getOrPut LayerDrawing(emptyMap(), null)
         val out = HashMap<Feature, Path>()
+        var skip: Path? = null
         val pts = model.points
         for (p in l.firstPath until l.firstPath + l.pathCount) {
-            val path = out.getOrPut(model.feature(p)) { Path() }
+            val path = if (model.objectOf(p) in skipped) skip ?: Path().also { skip = it } else out.getOrPut(model.feature(p)) { Path() }
             val range = model.pathPoints(p)
             path.moveTo(pts[range.first * 2], pts[range.first * 2 + 1])
             for (k in range.first + 1..range.last) path.lineTo(pts[k * 2], pts[k * 2 + 1])
         }
-        out
+        LayerDrawing(out, skip)
     }
 }
 
-/** Top view of one layer: its paths by feature over faint outlines of the layers below. */
+/**
+ * Top view of one layer: its paths by feature over faint outlines of the layers below.
+ * Skipped objects are drawn as a thin red outline only: they won't print from the skip on.
+ */
 @Composable
 fun LayerCanvas(model: GcodeModel, paths: LayerPaths, layer: Int, modifier: Modifier = Modifier) {
     val b = model.bounds
@@ -125,12 +137,13 @@ fun LayerCanvas(model: GcodeModel, paths: LayerPaths, layer: Int, modifier: Modi
             val step = maxOf(1, layer / 40)
             var k = layer - step
             while (k >= 1) {
-                paths.of(k)[Feature.OuterWall]?.let { drawPath(it, FeatureColors.earlier, style = Stroke(width = 1f * px)) }
+                paths.of(k).byFeature[Feature.OuterWall]?.let { drawPath(it, FeatureColors.earlier, style = Stroke(width = 1f * px)) }
                 k -= step
             }
             val current = paths.of(layer)
+            current.skipped?.let { drawPath(it, FeatureColors.skipped, style = Stroke(width = 1f * px, cap = StrokeCap.Round, join = StrokeJoin.Round)) }
             // Infill first, walls on top.
-            current.entries.sortedBy { FeatureColors.isWall(it.key) }.forEach { (f, path) ->
+            current.byFeature.entries.sortedBy { FeatureColors.isWall(it.key) }.forEach { (f, path) ->
                 drawPath(
                     path, FeatureColors.of(f),
                     style = Stroke(width = (if (FeatureColors.isWall(f)) 2.2f else 1.3f) * px, cap = StrokeCap.Round, join = StrokeJoin.Round),
@@ -141,13 +154,15 @@ fun LayerCanvas(model: GcodeModel, paths: LayerPaths, layer: Int, modifier: Modi
 }
 
 @Composable
-fun FeatureLegend(features: Collection<Feature>, modifier: Modifier = Modifier) {
+fun FeatureLegend(features: Collection<Feature>, modifier: Modifier = Modifier, skipped: Boolean = false) {
     val t = LocalBambuType.current
     FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        features.sortedBy { it.ordinal }.forEach { f ->
+        val entries = features.sortedBy { it.ordinal }.map { FeatureColors.of(it) to FeatureColors.label(it) } +
+            listOfNotNull((FeatureColors.skipped to "Skipped").takeIf { skipped })
+        entries.forEach { (color, label) ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.width(10.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(FeatureColors.of(f)))
-                Text(FeatureColors.label(f), style = t.caption, color = Palette.muted)
+                Box(Modifier.width(10.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(color))
+                Text(label, style = t.caption, color = Palette.muted)
             }
         }
     }

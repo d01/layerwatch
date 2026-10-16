@@ -70,6 +70,34 @@ class JobArchiveTest {
             assertTrue(g.pathPoints(p).count() >= 2)
         }
         assertTrue(g.bounds[0] > 100f && g.bounds[2] < 155f) // matches plate bbox ~104..151
+        // Every wall belongs to the plate's one object, by its slice_info identify_id.
+        val walls = (0 until g.pathCount).filter { g.feature(it) == Feature.OuterWall }
+        assertTrue(walls.isNotEmpty())
+        assertEquals(setOf(270), walls.map { g.objectOf(it) }.toSet())
+    }
+
+    @Test fun pathsAreTaggedWithTheirObject() {
+        val gcode = """
+            M83
+            ; layer num/total_layer_count: 1/1
+            ; FEATURE: Skirt
+            G1 X0 Y0
+            G1 X5 Y0 E1
+            ; start printing object, unique label id: 11
+            M624 AQAAAAAAAAA=
+            ; FEATURE: Outer wall
+            G1 X10 Y0 E1
+            ; stop printing object, unique label id: 11
+            M625
+            ; start printing object, unique label id: 12
+            M624 AgAAAAAAAAA=
+            G1 X20 Y0 E1
+            ; stop printing object, unique label id: 12
+            M625
+        """.trimIndent()
+        val g = GcodeParser.parse(StringReader(gcode).buffered())
+        // Same feature, no travel between them: the object change alone splits the paths.
+        assertEquals(listOf(null, 11, 12), (0 until g.pathCount).map { g.objectOf(it) })
     }
 
     @Test fun parserHandlesMarkersToolChangesAndAbsoluteE() {

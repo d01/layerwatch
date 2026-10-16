@@ -10,17 +10,18 @@ Text and answers for the Play Console, kept here so they change along with the a
 - **Contact email:** d01.devel@gmail.com
 - **Website:** https://d01.github.io/layerwatch/
 - **Privacy policy:** https://d01.github.io/layerwatch/privacy.html
+- **Help:** https://d01.github.io/layerwatch/help.html
 
 ### Short description (80 max)
 
 ```
-Watch and control your Bambu Lab 3D printer over your own network. No cloud.
+Bambu Lab 3D printer monitor: live camera, alerts, controls. LAN only, no cloud.
 ```
 
 ### Full description (4000 max)
 
 ```
-Layerwatch keeps an eye on your Bambu Lab 3D printer from your Android phone, talking to it directly over your own network. No cloud account, no ads, no tracking, and it's free and open source.
+Layerwatch is a 3D printer monitor for Bambu Lab printers such as the X1 Carbon, P1S, A1 and H2D. Watch the live camera, get print alerts on your phone and control your print, all directly over your own network in LAN mode. No cloud account, no ads, no tracking, and it's free and open source.
 
 LIVE CAMERA
 Watch the chamber camera live. Layerwatch adapts its buffer to the connection, so video stays smooth even when the printer's WiFi is weak.
@@ -37,12 +38,13 @@ While a print runs, Layerwatch keeps watching after you close it, with a Live Up
 PRINT DETAILS
 • A 3D view of the toolpaths, cut away at the current layer
 • A layer-by-layer view, and which object is which
+• Skip one failed object and let the rest of the plate finish
 • What's coming up: bridges, top surfaces, the final layers
 • Whether the loaded spools have enough filament for the rest of the job
 • The slicer's settings and estimates
 
 CONTROLS WITH SAFETY CATCHES
-Turn the chamber light on and off. Pause, stop and speed changes need a deliberate press-and-hold, so a stray tap never ruins a print.
+Turn the chamber light on and off. Pause, stop, speed changes and skipping a failed object need a deliberate press-and-hold, so a stray tap never ruins a print.
 
 HISTORY AND TIMELAPSES
 Look back at finished prints. Download and play timelapses; downloads carry on in the background.
@@ -61,6 +63,7 @@ Developed on the X1 Carbon. Also supports the X1, X1E, P1P, P1S, P2S, A1, A1 min
 
 SETUP
 On the printer, turn on LAN Only Mode and Developer Mode (and LAN Only Liveview for the camera on X1, P2S and H2 printers), then enter its IP address and access code. Note that LAN Only Mode disconnects the printer from Bambu's cloud and the Bambu Handy app.
+Step-by-step help: https://d01.github.io/layerwatch/help.html
 
 OPEN SOURCE
 Licensed under GPL-3.0: https://github.com/d01/layerwatch

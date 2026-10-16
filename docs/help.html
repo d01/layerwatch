@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Layerwatch Help</title>
+<meta name="description" content="Setting up Layerwatch with a Bambu Lab printer, and fixes for common connection problems.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <p class="eyebrow"><a href="./">Layerwatch</a></p>
+  <h1>Help</h1>
+  <p class="lead">Layerwatch talks to your printer directly over your own network. These are
+    the settings it needs on the printer, and what to check when something doesn't work.</p>
+
+  <h2 id="setup">Setting up the printer</h2>
+  <ol>
+    <li>On the printer's screen, open its network settings: <strong>Settings → Network</strong>
+      on the X1 and H2 series, <strong>Settings → WLAN</strong> on the P1 and A1 series.</li>
+    <li>Turn on <strong>LAN Only Mode</strong>. This disconnects the printer from Bambu's cloud,
+      so Bambu Handy and cloud printing from Bambu Studio stop working while it's on. Bambu
+      Studio can still print to it over the network.</li>
+    <li>Turn on <strong>Developer Mode</strong>. Recent firmware needs it before any app other
+      than Bambu's own can connect and send commands.</li>
+    <li>On the X1 and H2 series, turn on <strong>LAN Only Liveview</strong> to see the camera.</li>
+    <li>Write down the <strong>IP address</strong> and the 8-character <strong>access
+      code</strong> shown on that screen, and enter them in Layerwatch.</li>
+  </ol>
+  <p class="muted">Tip: give the printer a fixed address (a DHCP reservation in your router),
+    so it keeps the same IP address after a restart.</p>
+
+  <h2 id="errors">Connection problems</h2>
+  <h3>“The printer rejected that access code”</h3>
+  <p>Check the code on the printer's network screen. It changes whenever it's regenerated
+    there. Also check that LAN Only Mode and Developer Mode are both
+    on. To enter a new code later, use <em>Change access code</em> in the ⋮ menu.</p>
+
+  <h3>“Couldn't reach” the printer</h3>
+  <ul>
+    <li>Check the IP address against the printer's network screen.</li>
+    <li>Your phone has to be on the same network as the printer, or connected to it through
+      a VPN. Mobile data on its own won't work.</li>
+    <li>Guest WiFi networks and some mesh systems keep devices apart. Try the main
+      network.</li>
+    <li>If your network keeps devices apart (separate networks, VLANs or a firewall), make
+      sure your phone can reach the printer on TCP ports 8883 (status and controls), 990 (files and timelapses), and either 322
+      (camera on the X1, P2S, H2 and X2 series) or 6000 (camera on the P1 and A1 series).</li>
+  </ul>
+
+  <h3>“Didn't present a Bambu printer certificate”</h3>
+  <p>Something other than a Bambu printer answered at that address, usually because the
+    printer's IP address has changed. Check it on the printer's screen.</p>
+
+  <h3>The connection keeps dropping</h3>
+  <p>Printer WiFi is often weak, especially with the printer inside an enclosure. Layerwatch
+    reconnects on its own and keeps the camera running through short drops. A stronger
+    WiFi signal at the printer helps the most, for example an access point closer to
+    it.</p>
+
+  <h2 id="features">Features</h2>
+  <h3>The camera says “LAN Only Liveview is off”</h3>
+  <p>Turn on LAN Only Liveview in the printer's network settings (X1 and H2 series).</p>
+
+  <h3>Controls are greyed out</h3>
+  <p>The printer only accepts pause, stop, speed, light and skip commands with Developer Mode
+    on. Monitoring works either way.</p>
+
+  <h3>Skipping an object isn't offered</h3>
+  <p>Skipping needs firmware that supports it, and a plate sliced with <em>Exclude
+    objects</em> (label objects) turned on in Bambu Studio or OrcaSlicer. It works for up to 64
+    objects, once the print has started. To skip the last object left, stop the print
+    instead.</p>
+
+  <h3>No alerts while the phone is locked</h3>
+  <p>Check that <em>Background watching</em> is on in the ⋮ menu, and that notifications are
+    allowed for Layerwatch. Some phones also stop background apps to save battery. If alerts
+    still don't arrive, set Layerwatch's battery use to <em>Unrestricted</em> in Android's app
+    settings.</p>
+
+  <h2 id="contact">Still stuck?</h2>
+  <p><a href="https://github.com/d01/layerwatch/issues">Open an issue on GitHub</a> with your
+    printer model, firmware version and what you see, or email
+    <a href="mailto:d01.devel@gmail.com">d01.devel@gmail.com</a>.</p>
+
+  <p class="muted small">Layerwatch is an independent project, not affiliated with or
+    endorsed by Bambu Lab.</p>
+</main>
+</body>
+</html>

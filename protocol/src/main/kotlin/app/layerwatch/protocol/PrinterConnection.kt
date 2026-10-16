@@ -98,10 +98,16 @@ class PrinterConnection(
         _link.value = LinkState.Stopped
     }
 
-    /** Drop the current session (if any) and connect immediately, resetting backoff. */
+    /**
+     * Drop the current session (if any) and connect immediately, resetting backoff.
+     *
+     * Takes the session before kicking: the kick can wake a waiting loop, which may open
+     * and publish a new session before the next line runs, and that one must survive.
+     */
     override fun reconnectNow() {
+        val current = session
         kick.trySend(Unit)
-        session?.close()
+        current?.close()
     }
 
     /** Ask the printer for a full state dump. */

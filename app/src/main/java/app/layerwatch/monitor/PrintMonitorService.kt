@@ -107,6 +107,7 @@ class PrintMonitorService : Service() {
                 val outcome = when (e) {
                     is PrintEvent.Finished -> Outcome.Finished
                     is PrintEvent.Failed -> Outcome.Failed
+                    is PrintEvent.Stopped -> Outcome.Stopped
                     else -> null
                 }
                 if (outcome != null && recordKey != null) {

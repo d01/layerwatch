@@ -136,7 +136,7 @@ private fun Banner(
 
 /** True when the printer has something to say: paused, failed, an error, or an HMS alert not dismissed. */
 fun needsAttention(s: PrinterStatus?, dismissed: Set<String> = emptySet()): Boolean =
-    s != null && (s.jobState == JobState.Paused || s.jobState == JobState.Failed || s.printErrorCode != 0L ||
+    s != null && (s.jobState == JobState.Paused || (s.jobState == JobState.Failed && !s.isStopped) || s.printFault != 0L ||
         s.hms.any { it.id !in dismissed })
 
 /**
@@ -157,9 +157,9 @@ fun PrinterAlertCard(
     val t = LocalBambuType.current
     val uri = LocalUriHandler.current
     val paused = s.jobState == JobState.Paused
-    val failed = s.jobState == JobState.Failed
+    val failed = s.jobState == JobState.Failed && !s.isStopped
     val alerts = s.hms.filter { it.id !in dismissed }
-    val serious = paused || failed || s.printErrorCode != 0L || alerts.any { it.level.isError }
+    val serious = paused || failed || s.printFault != 0L || alerts.any { it.level.isError }
     val border = if (serious) Color(0xFF4A3A1C) else Palette.outline
     Column(
         modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Palette.card)
@@ -168,16 +168,14 @@ fun PrinterAlertCard(
     ) {
         val eyebrow = when {
             paused -> "PAUSED"
-            failed -> "FAILED"
+            failed -> "PRINT FAILED"
             serious -> "PRINTER ERROR"
             else -> "NOTICE"
         }
         Text(eyebrow, style = t.eyebrow, color = if (serious) Palette.amber else Palette.blue)
-        when {
-            paused -> Text(s.stage?.takeIf { it.isPause }?.label ?: "Paused", style = t.jobName, color = Palette.text)
-            failed -> Text(Format.phase(s), style = t.jobName, color = Palette.text)
-        }
-        s.printError?.let { code ->
+        // A failure's story is its error text below; only a pause gets a headline.
+        if (paused) Text(s.stage?.takeIf { it.isPause }?.label ?: "Paused", style = t.jobName, color = Palette.text)
+        s.printError?.takeIf { s.printFault != 0L }?.let { code ->
             val text = HmsCatalog.describeError(s.printErrorCode)
             Text(text ?: "Print error $code", style = t.body, color = Palette.text)
         }

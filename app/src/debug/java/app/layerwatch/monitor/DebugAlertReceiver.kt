@@ -14,7 +14,7 @@ import kotlinx.coroutines.launch
  *
  *   adb shell am broadcast -n app.layerwatch/.monitor.DebugAlertReceiver --es event first_layer
  *
- * events: first_layer | finished | failed | paused | hms
+ * events: first_layer | finished | failed | stopped | paused | hms
  */
 class DebugAlertReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -22,7 +22,8 @@ class DebugAlertReceiver : BroadcastReceiver() {
         val job = app.printer.status.value?.jobName ?: "test print"
         val event = when (intent.getStringExtra("event")) {
             "finished" -> PrintEvent.Finished(job)
-            "failed" -> PrintEvent.Failed(job, "0300_400C")
+            "failed" -> PrintEvent.Failed(job, "0300_8016")
+            "stopped" -> PrintEvent.Stopped(job)
             "paused" -> PrintEvent.Paused(job, "Paused: filament runout", byPrinter = true)
             "hms" -> PrintEvent.NewHms(job, listOf(HmsAlert(0x07002000, 0x00020001)))
             else -> PrintEvent.FirstLayerDone(job)

@@ -39,8 +39,20 @@ class PrintEventDetectorTest {
 
     @Test fun failureCarriesPrintError() {
         feed(""""gcode_state":"RUNNING","subtask_name":"x"""")
-        val failed = feed(""""gcode_state":"FAILED","print_error":50348044""").single() as PrintEvent.Failed
-        assertEquals("0300_400C", failed.printError)
+        val failed = feed(""""gcode_state":"FAILED","print_error":50364438""").single() as PrintEvent.Failed
+        assertEquals("0300_8016", failed.printError)
+    }
+
+    @Test fun failedWithoutAReasonIsStopped() {
+        feed(""""gcode_state":"RUNNING","subtask_name":"x","print_error":0,"hms":[]""")
+        assertEquals(listOf(PrintEvent.Stopped("x")), feed(""""gcode_state":"FAILED""""))
+        feed(""""gcode_state":"RUNNING","print_error":0""")
+        assertEquals(listOf(PrintEvent.Stopped("x")), feed(""""gcode_state":"FAILED","print_error":50348044"""))
+    }
+
+    @Test fun failedWithAnErrorAlertIsAFailure() {
+        feed(""""gcode_state":"RUNNING","subtask_name":"x","print_error":0,"hms":[]""")
+        assertTrue(feed(""""gcode_state":"FAILED","hms":[{"attr":50336256,"code":131073}]""").any { it is PrintEvent.Failed })
     }
 
     @Test fun hmsAlertsOnlyWhenNewAndAgainAfterClearing() {

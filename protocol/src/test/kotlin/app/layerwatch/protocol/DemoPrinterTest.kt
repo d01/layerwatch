@@ -46,7 +46,7 @@ class DemoPrinterTest {
         step(1)
         assertEquals(JobState.Failed, demo.status.value!!.jobState)
         assertEquals("The task was canceled.", HmsCatalog.describeError(demo.status.value!!.printErrorCode))
-        assertTrue(events.any { it is PrintEvent.Failed })
+        assertTrue(events.any { it is PrintEvent.Stopped })
     }
 
     @Test fun lightAndSpeedRespond() {

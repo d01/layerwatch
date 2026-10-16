@@ -153,10 +153,11 @@ class MonitorNotifications(private val context: Context) {
             is PrintEvent.Finished -> Triple(ID_FINISHED, "Print finished", "$job is done on $model.")
             is PrintEvent.Failed -> Triple(
                 ID_FAILED, "Print failed",
-                "$job stopped on $model." + (event.printError?.let { code ->
+                "$job failed on $model." + (event.printError?.let { code ->
                     code.replace("_", "").toLongOrNull(16)?.let(HmsCatalog::describeError)?.let { " $it" } ?: " Error $code."
                 } ?: ""),
             )
+            is PrintEvent.Stopped -> Triple(ID_FAILED, "Print stopped", "$job was stopped on $model.")
             is PrintEvent.Paused -> Triple(
                 ID_PAUSED,
                 if (event.byPrinter) event.reason else "Print paused",

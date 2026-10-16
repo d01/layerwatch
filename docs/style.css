@@ -27,6 +27,9 @@ main {
 
 h1 { font-size: 2.2rem; line-height: 1.2; margin: 0.2em 0 0.3em; font-weight: 600; }
 h2 { font-size: 1.2rem; margin: 2em 0 0.5em; font-weight: 600; }
+h3 { font-size: 1rem; margin: 1.5em 0 0.3em; font-weight: 600; }
+ol { padding-left: 1.4em; }
+ol li::marker { font-weight: 600; }
 a { color: var(--blue); }
 .eyebrow { text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.8rem; font-weight: 600; margin: 0; }
 .eyebrow a { color: var(--amber); text-decoration: none; }

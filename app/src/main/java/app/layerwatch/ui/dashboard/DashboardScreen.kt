@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
@@ -34,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -56,6 +58,7 @@ import app.layerwatch.ui.components.Glyph
 import app.layerwatch.ui.components.HealthBanner
 import app.layerwatch.ui.components.JobCard
 import app.layerwatch.ui.components.LinkChip
+import app.layerwatch.ui.components.Links
 import app.layerwatch.ui.components.Panel
 import app.layerwatch.ui.components.PrinterAlertCard
 import app.layerwatch.ui.components.SpeedControl
@@ -306,6 +309,7 @@ private fun MoreMenu(d: Dash) {
         ) { Glyph(R.drawable.ic_more, Palette.text, 20.dp, description = "More options") }
         val watching by d.vm.watchInBackground.collectAsStateWithLifecycle()
         val screenOn by d.vm.keepScreenOn.collectAsStateWithLifecycle()
+        val context = LocalContext.current
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             DropdownMenuItem(text = { Text("Print history") }, onClick = { open = false; d.onHistory() })
             DropdownMenuItem(
@@ -318,6 +322,10 @@ private fun MoreMenu(d: Dash) {
             )
             if (!d.config.isDemo) DropdownMenuItem(text = { Text("Change access code") }, onClick = { open = false; d.onUpdateCode() })
             DropdownMenuItem(text = { Text(if (d.config.isDemo) "Leave demo" else "Forget printer") }, onClick = { open = false; d.onForget() })
+            HorizontalDivider(color = Palette.outline)
+            DropdownMenuItem(text = { Text("Help") }, onClick = { open = false; Links.open(context, Links.HELP) })
+            DropdownMenuItem(text = { Text("Report a problem") }, onClick = { open = false; Links.open(context, Links.NEW_ISSUE) })
+            DropdownMenuItem(text = { Text("Rate Layerwatch") }, onClick = { open = false; Links.openPlayListing(context) })
         }
     }
 }

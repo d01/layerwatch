@@ -62,8 +62,9 @@ data class GcodeHeader(
  * Toolpaths of a whole print, packed for drawing: every extruding polyline is a run of
  * (x, y) points in [points]; path `i` spans points `pathStart[i] until pathStart[i + 1]`
  * (the last ends at the array's logical end), lies in layer [pathLayer]`[i]` and is
- * feature [Feature.entries]`[pathFeature[i]]`. Paths are stored in print order, so each
- * layer's paths are contiguous.
+ * feature [Feature.entries]`[pathFeature[i]]`, of object [pathObject]`[i]` (the slicer's
+ * `identify_id`, or [NO_OBJECT] for purge lines, prime tower and the like). Paths are
+ * stored in print order, so each layer's paths are contiguous.
  */
 class GcodeModel(
     val header: GcodeHeader,
@@ -73,6 +74,7 @@ class GcodeModel(
     val pathStart: IntArray,
     val pathLayer: IntArray,
     val pathFeature: ByteArray,
+    val pathObject: IntArray,
     val pathCount: Int,
     val toolChanges: List<ToolChange>,
     /** Extent of all extrusion: minX, minY, maxX, maxY. */
@@ -90,6 +92,9 @@ class GcodeModel(
 
     fun feature(path: Int): Feature = Feature.entries[pathFeature[path].toInt()]
 
+    /** The object a path belongs to (its `identify_id`), or null outside any object. */
+    fun objectOf(path: Int): Int? = pathObject[path].takeIf { it != NO_OBJECT }
+
     /** Filament still to extrude after [layer] has finished, mm by tool. */
     fun extrudedAfter(layer: Int): Map<Int, Float> {
         val out = HashMap<Int, Float>()
@@ -103,4 +108,8 @@ class GcodeModel(
 
     /** Last layer that prints [feature], if any. */
     fun lastLayerWith(feature: Feature): GcodeLayer? = layers.lastOrNull { feature in it.features }
+
+    companion object {
+        const val NO_OBJECT = -1
+    }
 }

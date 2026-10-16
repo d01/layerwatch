@@ -36,14 +36,14 @@ import kotlin.math.max
 /**
  * The cut-away build view: every layer's outer walls as see-through lines, coloured by
  * whether they're printed (amber deepening with height), printing (bright), or still to
- * print (faint, thinned). Drag to orbit, pinch to zoom, double-tap
- * to reset.
+ * print (faint, thinned). Skipped objects are faint red below the current layer and gone
+ * above it, since they won't print. Drag to orbit, pinch to zoom, double-tap to reset.
  */
 @Composable
-fun BuildView3D(model: GcodeModel, layer: Int, modifier: Modifier = Modifier) {
-    // Geometry is built once per model, off the main thread.
-    val geometry by produceState<WallGeometry?>(null, model) {
-        value = withContext(Dispatchers.Default) { WallGeometry.build(model) }
+fun BuildView3D(model: GcodeModel, layer: Int, modifier: Modifier = Modifier, skipped: Set<Int> = emptySet()) {
+    // Geometry is built once per model (and skip set), off the main thread.
+    val geometry by produceState<WallGeometry?>(null, model, skipped) {
+        value = withContext(Dispatchers.Default) { WallGeometry.build(model, skipped) }
     }
     var view by remember { mutableStateOf<BuildGlView?>(null) }
     AndroidView(
@@ -70,7 +70,10 @@ fun BuildView3D(model: GcodeModel, layer: Int, modifier: Modifier = Modifier) {
     }
 }
 
-/** Interleaved (x, y, z, layer) line-segment vertices, centred and scaled to about unit size. */
+/**
+ * Interleaved (x, y, z, layer) line-segment vertices, centred and scaled to about unit size.
+ * Skipped objects' vertices carry the layer negated, for the shader to tint.
+ */
 class WallGeometry(
     val history: FloatArray,
     val vertexCount: Int,
@@ -79,13 +82,14 @@ class WallGeometry(
     val scale: Float,
     /** Bounding-sphere radius in normalised units, for framing the camera. */
     val radius: Float,
+    val skipped: Set<Int>,
 ) {
-    /** All walls of one layer, in the same normalised space, for the bright current layer. */
+    /** All walls of one layer, in the same normalised space, for the bright current layer. Skipped objects aren't printing. */
     fun layerWalls(layer: Int): FloatArray {
         val l = model.layer(layer) ?: return FloatArray(0)
         val out = FloatBuilder()
         for (p in l.firstPath until l.firstPath + l.pathCount) {
-            if (!FeatureColors.isWall(model.feature(p))) continue
+            if (!FeatureColors.isWall(model.feature(p)) || model.objectOf(p) in skipped) continue
             appendPath(model, p, l.z, layer.toFloat(), center, scale, out)
         }
         return out.toArray()
@@ -94,7 +98,7 @@ class WallGeometry(
     companion object {
         private val HISTORY = setOf(Feature.OuterWall, Feature.OverhangWall)
 
-        fun build(model: GcodeModel): WallGeometry {
+        fun build(model: GcodeModel, skipped: Set<Int> = emptySet()): WallGeometry {
             val b = model.bounds
             val zMax = model.layers.lastOrNull()?.z ?: 1f
             val center = floatArrayOf((b[0] + b[2]) / 2, (b[1] + b[3]) / 2, zMax / 2)
@@ -103,13 +107,14 @@ class WallGeometry(
             for (l in model.layers) {
                 for (p in l.firstPath until l.firstPath + l.pathCount) {
                     if (model.feature(p) !in HISTORY) continue
-                    appendPath(model, p, l.z, l.number.toFloat(), center, scale, out)
+                    val tag = if (model.objectOf(p) in skipped) -l.number.toFloat() else l.number.toFloat()
+                    appendPath(model, p, l.z, tag, center, scale, out)
                 }
             }
             val w = b[2] - b[0]
             val h = b[3] - b[1]
             val radius = 0.5f * scale * kotlin.math.sqrt(w * w + h * h + zMax * zMax)
-            return WallGeometry(out.toArray(), out.size / 4, model, center, scale, radius)
+            return WallGeometry(out.toArray(), out.size / 4, model, center, scale, radius, skipped)
         }
 
         private fun appendPath(model: GcodeModel, p: Int, z: Float, layer: Float, c: FloatArray, s: Float, out: FloatBuilder) {
@@ -327,7 +332,10 @@ uniform float uCurrent;
 out vec4 vColor;
 void main() {
     gl_Position = uMvp * vec4(aPos, 1.0);
-    if (aLayer < uCurrent - 0.5) {
+    if (aLayer < 0.0) {
+        // A skipped object: faint red where it may have printed, nothing above.
+        vColor = -aLayer < uCurrent - 0.5 ? vec4(1.0, 0.353, 0.31, 0.3) : vec4(0.0);
+    } else if (aLayer < uCurrent - 0.5) {
         float t = aLayer / max(uCurrent, 1.0);
         vColor = vec4(0.35 + 0.6 * t, 0.27 + 0.42 * t, 0.10 + 0.19 * t, 0.5);
     } else if (aLayer < uCurrent + 0.5) {

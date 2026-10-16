@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -218,7 +219,8 @@ private fun BuildPanel(state: DetailsState, job: JobFile, images: JobImages, mod
     val total = model?.layers?.size ?: 0
     val live = (if (state.status == null) total else state.currentLayer).coerceIn(1, total.coerceAtLeast(1))
     val layer = (pinned ?: live).coerceIn(1, total.coerceAtLeast(1))
-    val paths = remember(model) { model?.let(::LayerPaths) }
+    val skipped = state.skip?.skipped.orEmpty()
+    val paths = remember(model, skipped) { model?.let { LayerPaths(it, skipped) } }
 
     Panel(modifier, padding = 14.dp, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Segmented(listOf("3D build", "Layer"), mode, { mode = it })
@@ -229,13 +231,16 @@ private fun BuildPanel(state: DetailsState, job: JobFile, images: JobImages, mod
             if (mode == "Layer" && model != null && paths != null) {
                 LayerCanvas(model, paths, layer, Modifier.fillMaxSize())
             } else if (model != null) {
-                BuildView3D(model, layer, Modifier.fillMaxSize())
+                BuildView3D(model, layer, Modifier.fillMaxSize(), skipped)
             } else {
                 images.render?.let { Image(it, "Slicer render of the plate", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
             }
         }
         if (model != null) {
-            if (mode == "Layer") FeatureLegend(model.layer(layer)?.features.orEmpty()) else BuildLegend(layer)
+            if (mode == "Layer") {
+                val drawing = paths?.of(layer)
+                FeatureLegend(drawing?.byFeature?.keys.orEmpty(), skipped = drawing?.skipped != null)
+            } else BuildLegend(layer, skipped.isNotEmpty())
             LayerScrubber(
                 layer = layer, liveLayer = live, total = total, following = pinned == null,
                 onLayer = { pinned = it.takeIf { l -> l != live } }, onLive = { pinned = null },
@@ -272,10 +277,12 @@ private fun Segmented(options: List<String>, selected: String, onSelect: (String
 }
 
 @Composable
-private fun BuildLegend(layer: Int) {
+private fun BuildLegend(layer: Int, skipped: Boolean) {
     val t = LocalBambuType.current
-    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        listOf(Palette.amber to "Printed", androidx.compose.ui.graphics.Color(0xFFFFE2A8) to "Layer $layer", androidx.compose.ui.graphics.Color(0xFF3A4046) to "Still to print").forEach { (c, l) ->
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        val entries = listOf(Palette.amber to "Printed", androidx.compose.ui.graphics.Color(0xFFFFE2A8) to "Layer $layer", androidx.compose.ui.graphics.Color(0xFF3A4046) to "Still to print") +
+            listOfNotNull((FeatureColors.skipped to "Skipped").takeIf { skipped })
+        entries.forEach { (c, l) ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.size(width = 10.dp, height = 3.dp).clip(RoundedCornerShape(2.dp)).background(c))
                 Text(l, style = t.caption, color = Palette.muted)

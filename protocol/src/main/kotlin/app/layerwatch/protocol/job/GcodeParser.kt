@@ -6,12 +6,15 @@ import java.io.BufferedReader
  * Streams G-code into a [GcodeModel]. Understands what OrcaSlicer and Bambu Studio emit:
  * `; layer num/total_layer_count:`, `M73 L` and `;LAYER_CHANGE` for layers, `; Z_HEIGHT:`
  * / `;Z:` for heights, `; FEATURE:` / `;TYPE:` for features, `M73 P R` for the slicer's
- * time plan, `M620 S<n>A` / `T<n>` for filament changes, M82/M83/G92 for extrusion mode.
+ * time plan, `M620 S<n>A` / `T<n>` for filament changes, M82/M83/G92 for extrusion mode,
+ * and `; start/stop printing object, unique label id: <n>` for which object is printing.
  * Arcs (G2/G3 with I/J, emitted when arc fitting is on) are interpolated into ~1 mm
  * segments so curved walls stay curved.
  */
 object GcodeParser {
     private const val ARC_SEGMENT_MM = 1f
+    private const val OBJECT_START = "; start printing object, unique label id:"
+    private const val OBJECT_STOP = "; stop printing object, unique label id:"
 
     fun parse(reader: BufferedReader): GcodeModel = State().apply {
         reader.lineSequence().forEach(::line)
@@ -31,6 +34,7 @@ object GcodeParser {
         var relativeE = true
         var lastE = 0f
         var feature = Feature.Other
+        var objectId = GcodeModel.NO_OBJECT
         var tool: Int? = null
         var initialTool: Int? = null
         var pendingZ = 0f
@@ -52,6 +56,7 @@ object GcodeParser {
         var pathStart = IntArray(1 shl 12)
         var pathLayer = IntArray(1 shl 12)
         var pathFeature = ByteArray(1 shl 12)
+        var pathObject = IntArray(1 shl 12)
         var pathCount = 0
         var inPath = false
         val bounds = floatArrayOf(Float.MAX_VALUE, Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE)
@@ -76,6 +81,8 @@ object GcodeParser {
             when {
                 c.startsWith("; FEATURE:") -> changeFeature(Feature.parse(c.substringAfter(':')))
                 c.startsWith(";TYPE:") -> changeFeature(Feature.parse(c.substringAfter(':')))
+                c.startsWith(OBJECT_START) -> changeObject(c.substringAfter(OBJECT_START).trim().toIntOrNull() ?: GcodeModel.NO_OBJECT)
+                c.startsWith(OBJECT_STOP) -> changeObject(GcodeModel.NO_OBJECT)
                 c.startsWith("; Z_HEIGHT:") -> c.substringAfter(':').trim().toFloatOrNull()?.let(::height)
                 c.startsWith(";Z:") -> c.substringAfter(':').trim().toFloatOrNull()?.let(::height)
                 c.startsWith("; layer num/total_layer_count:") ->
@@ -102,6 +109,11 @@ object GcodeParser {
         private fun changeFeature(f: Feature) {
             if (f != feature) endPath()
             feature = f
+        }
+
+        private fun changeObject(id: Int) {
+            if (id != objectId) endPath()
+            objectId = id
         }
 
         private fun m73(code: String) {
@@ -215,10 +227,12 @@ object GcodeParser {
                 pathStart = pathStart.copyOf(pathCount * 2)
                 pathLayer = pathLayer.copyOf(pathCount * 2)
                 pathFeature = pathFeature.copyOf(pathCount * 2)
+                pathObject = pathObject.copyOf(pathCount * 2)
             }
             pathStart[pathCount] = pointCount
             pathLayer[pathCount] = layerNumber
             pathFeature[pathCount] = feature.ordinal.toByte()
+            pathObject[pathCount] = objectId
             pathCount++
             inPath = true
             addPoint(x, y)
@@ -245,7 +259,7 @@ object GcodeParser {
                 header = GcodeHeader(generator, totalSec, modelSec, headerLayers, maxZ),
                 layers = layers,
                 points = points, pointCount = pointCount,
-                pathStart = pathStart, pathLayer = pathLayer, pathFeature = pathFeature, pathCount = pathCount,
+                pathStart = pathStart, pathLayer = pathLayer, pathFeature = pathFeature, pathObject = pathObject, pathCount = pathCount,
                 toolChanges = toolChanges,
                 bounds = bounds,
                 initialTool = initialTool,

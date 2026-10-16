@@ -326,6 +326,7 @@ private fun MoreMenu(d: Dash) {
             DropdownMenuItem(text = { Text("Help") }, onClick = { open = false; Links.open(context, Links.HELP) })
             DropdownMenuItem(text = { Text("Report a problem") }, onClick = { open = false; Links.open(context, Links.NEW_ISSUE) })
             DropdownMenuItem(text = { Text("Rate Layerwatch") }, onClick = { open = false; Links.openPlayListing(context) })
+            DropdownMenuItem(text = { Text("Open source on GitHub") }, onClick = { open = false; Links.open(context, Links.SOURCE) })
         }
     }
 }

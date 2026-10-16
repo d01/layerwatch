@@ -66,7 +66,7 @@ On the printer, turn on LAN Only Mode and Developer Mode (and LAN Only Liveview 
 Step-by-step help: https://d01.github.io/layerwatch/help.html
 
 OPEN SOURCE
-Licensed under GPL-3.0: https://github.com/d01/layerwatch
+Licensed under GPL-3.0. Read the code, report a problem or contribute on GitHub: github.com/d01/layerwatch
 
 Layerwatch is an independent project, not affiliated with or endorsed by Bambu Lab.
 ```

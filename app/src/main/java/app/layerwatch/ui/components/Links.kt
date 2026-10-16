@@ -5,10 +5,11 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 
-/** Pages outside the app: the help page on the website, issues on GitHub, the Play listing. */
+/** Pages outside the app: the help page on the website, the source and issues on GitHub, the Play listing. */
 object Links {
     const val HELP = "https://d01.github.io/layerwatch/help.html"
-    const val NEW_ISSUE = "https://github.com/d01/layerwatch/issues/new"
+    const val SOURCE = "https://github.com/d01/layerwatch"
+    const val NEW_ISSUE = "$SOURCE/issues/new"
 
     /** The released app's id, not packageName: debug builds carry a ".debug" suffix that has no listing. */
     private const val PLAY_ID = "app.layerwatch"

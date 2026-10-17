@@ -29,8 +29,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -154,13 +154,22 @@ class PrintMonitorService : Service() {
         }
     }
 
-    /** Refresh the foreground notification on change, at most every [NOTIFY_MIN_MS]. */
+    /**
+     * Refresh the foreground notification on change, at most every [NOTIFY_MIN_MS].
+     * Conflated, not collectLatest: a new value must wait out the delay, not cancel it.
+     */
     private suspend fun updateOngoing() {
+        var markersFor: JobFile? = null
+        var markers: ProgressMarkers? = null
         combine(repo.status, repo.link, repo.lastReportAtMs, app.jobs.state) { s, link, last, load -> Quad(s, link, last, load) }
-            .collectLatest { (s, link, last, load) ->
-                if (s?.jobState?.isActive == false) return@collectLatest // stopping; don't repost
+            .conflate()
+            .collect { (s, link, last, load) ->
+                if (s?.jobState?.isActive == false) return@collect // stopping; don't repost
                 val job = (load as? JobLoad.Ready)?.job
-                val markers = job?.gcode?.let(ProgressMarkers::from)
+                if (job !== markersFor) {
+                    markersFor = job
+                    markers = job?.gcode?.let(ProgressMarkers::from)
+                }
                 notes.postOngoing(
                     notes.ongoing(
                         model(), s, link, last, s?.chamberLightOn, System.currentTimeMillis(),

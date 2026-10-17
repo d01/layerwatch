@@ -29,6 +29,9 @@ import androidx.media3.exoplayer.upstream.Allocator
  * Instead of reconnecting (which would re-base the stream for the other viewers in turn),
  * each discontinuity is stitched out: the first frame after it is placed one frame after
  * the last one before it, and the same offset applies from then on.
+ *
+ * [RtpTimestampSmoother] now removes the printer's re-bases before Media3 sees them; this
+ * stays as the backstop for anything that still gets through (e.g. RTP clock wraparound).
  */
 class TimestampStitcher(
     private val maxBackwardUs: Long = 1_000_000,

@@ -46,6 +46,9 @@ class TimestampStitcher(
     private var anchorOutUs = C.TIME_UNSET
     var discontinuities = 0
         private set
+    /** Player-facing time of the first sample after the latest discontinuity. */
+    var lastStitchOutUs = C.TIME_UNSET
+        private set
 
     /** The player-facing time for the next sample read; [commit] = false for peeks. */
     fun map(rawUs: Long, commit: Boolean): Long {
@@ -55,6 +58,7 @@ class TimestampStitcher(
         if (commit) {
             if (stitched) {
                 discontinuities++
+                lastStitchOutUs = rawUs + offset
                 anchorRawUs = C.TIME_UNSET
             }
             offsetUs = offset
@@ -108,6 +112,8 @@ class ContinuousTimestampSource(source: MediaSource) : WrappingMediaSource(sourc
 private class ContinuousTimestampPeriod(val inner: MediaPeriod) : MediaPeriod {
     private val stitcher = TimestampStitcher()
     private var streams: Array<StitchedStream?> = emptyArray()
+    /** Discontinuities whose pre-jump samples have been flushed by [discardBuffer]. */
+    private var flushed = 0
 
     override fun prepare(callback: MediaPeriod.Callback, positionUs: Long) {
         inner.prepare(object : MediaPeriod.Callback {
@@ -141,7 +147,20 @@ private class ContinuousTimestampPeriod(val inner: MediaPeriod) : MediaPeriod {
         return stitcher.toOut(result)
     }
 
-    override fun discardBuffer(positionUs: Long, toKeyframe: Boolean) = inner.discardBuffer(stitcher.toRaw(positionUs), toKeyframe)
+    /**
+     * After a backward jump the queue still starts with played samples whose raw times are
+     * later than everything after the jump. SampleQueue discards by time and stops at the
+     * first later sample, so it would never free anything again: the stream piles up in
+     * 64 KB segments until the heap runs out. Once playback is past the stitch, every
+     * pre-jump sample has been played, so drop everything already read, once.
+     */
+    override fun discardBuffer(positionUs: Long, toKeyframe: Boolean) {
+        if (flushed != stitcher.discontinuities && positionUs >= stitcher.lastStitchOutUs) {
+            flushed = stitcher.discontinuities
+            inner.discardBuffer(Long.MAX_VALUE, /* toKeyframe = */ false)
+        }
+        inner.discardBuffer(stitcher.toRaw(positionUs), toKeyframe)
+    }
     override fun readDiscontinuity(): Long = stitcher.toOut(inner.readDiscontinuity())
     override fun seekToUs(positionUs: Long): Long = stitcher.toOut(inner.seekToUs(stitcher.toRaw(positionUs)))
     override fun getAdjustedSeekPositionUs(positionUs: Long, seekParameters: SeekParameters): Long =

@@ -1,5 +1,6 @@
 package app.layerwatch.camera
 
+import androidx.media3.common.C
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -82,5 +83,19 @@ class TimestampStitcherTest {
         val out = lastOut + frame
         assertEquals(46_746_362_000, s.toRaw(out))
         assertEquals(out, s.toOut(46_746_362_000))
+    }
+
+    @Test
+    fun `the stitch point is where the first post-jump frame plays`() {
+        // As on the tablet 2026-10-17: Media3 times stepped from ~45,030 s back to ~19,185 s.
+        val s = TimestampStitcher()
+        assertEquals(C.TIME_UNSET, s.lastStitchOutUs)
+        val before = s.feed(45_030_000_000, 10)
+        val after = s.feed(19_185_343_000, 3)
+        assertEquals(after.first(), s.lastStitchOutUs)
+        assertEquals(before.last() + frame, s.lastStitchOutUs)
+        // Peeks at the next jump don't move it.
+        s.map(1_000_000, commit = false)
+        assertEquals(after.first(), s.lastStitchOutUs)
     }
 }

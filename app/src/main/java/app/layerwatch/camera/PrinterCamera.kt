@@ -172,7 +172,11 @@ class PrinterCamera(
         _state.update { it.copy(status = CameraState.Status.Connecting, firstFrameMs = null) }
         val source = RtspMediaSource.Factory()
             .setForceUseRtpTcp(true) // the printer only offers RTP interleaved over TCP
-            .setSocketFactory(tls.socketFactory(config.serial))
+            .setSocketFactory(
+                RtpTimestampSmoother.socketFactory(tls.socketFactory(config.serial)) { channel, step ->
+                    Log.i(TAG, "smoothed an RTP re-base on channel $channel (step ${step / 90} ms)")
+                }
+            )
             .setTimeoutMs(CONNECT_TIMEOUT_MS)
             .createMediaSource(MediaItem.fromUri(streamUri(config)))
         // The printer re-bases the stream's timestamps whenever another client starts it.

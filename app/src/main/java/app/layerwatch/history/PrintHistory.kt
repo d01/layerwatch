@@ -32,6 +32,8 @@ data class PrintRecord(
     val totalLayers: Int?,
     /** Final chamber snapshot, relative to the history directory. */
     val snapshotFile: String?,
+    /** This print's timelapse in the printer's /timelapse, seen being written as it ended. */
+    val timelapse: String? = null,
 ) {
     internal fun toJson() = buildJsonObject {
         put("key", key)
@@ -42,6 +44,7 @@ data class PrintRecord(
         printError?.let { put("error", it) }
         totalLayers?.let { put("layers", it) }
         snapshotFile?.let { put("snapshot", it) }
+        timelapse?.let { put("timelapse", it) }
     }
 
     companion object {
@@ -57,6 +60,7 @@ data class PrintRecord(
                 printError = str("error"),
                 totalLayers = long("layers")?.toInt(),
                 snapshotFile = str("snapshot"),
+                timelapse = str("timelapse"),
             )
         }
     }
@@ -89,6 +93,10 @@ class PrintHistory(private val dir: File) {
         tmp.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 85, it) }
         tmp.renameTo(File(dir, name))
         edit { list -> list.map { if (it.key == key) it.copy(snapshotFile = name) else it } }
+    }
+
+    suspend fun attachTimelapse(key: String, name: String) = edit { list ->
+        list.map { if (it.key == key) it.copy(timelapse = name) else it }
     }
 
     /**

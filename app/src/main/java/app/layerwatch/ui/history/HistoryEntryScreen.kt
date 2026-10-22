@@ -79,10 +79,10 @@ private sealed interface Lapse {
     data class Found(val ref: TimelapseRef, val thumb: ImageBitmap?) : Lapse
 }
 
-/** One print ([nextKey]: the one followed after it, which bounds its timelapse search): its timelapse from the printer (play / save), final snapshot and summary. */
+/** One print: its timelapse from the printer (play / save), final snapshot and summary. */
 @OptIn(UnstableApi::class)
 @Composable
-fun HistoryEntryScreen(record: PrintRecord, nextKey: String?, onBack: () -> Unit) {
+fun HistoryEntryScreen(record: PrintRecord, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     val t = LocalBambuType.current
     val context = LocalContext.current
@@ -106,10 +106,17 @@ fun HistoryEntryScreen(record: PrintRecord, nextKey: String?, onBack: () -> Unit
         val release = app.printer.acquire()
         onDispose(release)
     }
-    LaunchedEffect(record.key, nextKey) {
-        lapse = runCatching { app.timelapses.find(record.key, nextKey) }.fold(
+    LaunchedEffect(record.key, record.timelapse) {
+        val name = record.timelapse ?: run {
+            lapse = Lapse.None(
+                if (record.outcome == Outcome.InProgress) "The timelapse is linked once the printer writes it, as the print ends."
+                else "No timelapse linked to this print. Layerwatch links it when it sees the print end; timelapse may have been off.",
+            )
+            return@LaunchedEffect
+        }
+        lapse = runCatching { app.timelapses.find(name) }.fold(
             onSuccess = { ref ->
-                if (ref == null) Lapse.None("No timelapse for this print on the printer. Timelapse may have been off.")
+                if (ref == null) Lapse.None("This print's timelapse ($name) is no longer on the printer.")
                 else Lapse.Found(ref, app.timelapses.thumbnail(ref)?.let { BitmapFactory.decodeFile(it.path)?.asImageBitmap() })
             },
             onFailure = { Lapse.None("Couldn't reach the printer's storage: ${it.message}") },
@@ -193,9 +200,7 @@ fun HistoryEntryScreen(record: PrintRecord, nextKey: String?, onBack: () -> Unit
                         ControlButton(saved ?: "Save to phone", ControlStyle.Secondary, { save() }, Modifier.weight(1f), minHeight = 48.dp, enabled = saved == null) {}
                     }
                     Text(
-                        "%.1f MB on the printer".format(l.ref.size / 1e6) +
-                            (if (ready != null) " · downloaded" else "") +
-                            if (l.ref.certain) "" else " · best guess; this print's file couldn't be confirmed",
+                        "%.1f MB on the printer".format(l.ref.size / 1e6) + if (ready != null) " · downloaded" else "",
                         style = t.caption, color = Palette.faint,
                     )
                 }

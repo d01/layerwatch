@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -19,8 +20,8 @@ sealed interface Download {
     data class Failed(val message: String) : Download
 }
 
-/** A print's timelapse on the printer, and how sure we are it's that print's. */
-data class TimelapseRef(val name: String, val size: Long, val certain: Boolean) {
+/** A print's timelapse on the printer. */
+data class TimelapseRef(val name: String, val size: Long) {
     val path get() = "$DIR/$name"
     val thumbnailPath get() = "$DIR/thumbnail/${name.removeSuffix(".mp4")}.jpg"
 
@@ -28,11 +29,13 @@ data class TimelapseRef(val name: String, val size: Long, val certain: Boolean) 
 }
 
 /**
- * Finds each print's timelapse on the printer without trusting the printer's clock (it
- * has no time sync in LAN-only mode and its file names drift by hours): when a print is
- * first seen, the existing timelapse names are recorded; the first file added after that,
- * and before the next print's snapshot, is that print's video. Prints without a snapshot
- * fall back to a guess, marked uncertain.
+ * Links each print to its timelapse by watching the printer write it. The printer puts no
+ * job or task id in the file, its MQTT reports or the MP4, and its file names and times
+ * come from clocks that drift by hours, so neither can be matched to a print later. What
+ * is certain: the file appears only once the print is over, and no other print can run
+ * meanwhile. So the existing names are recorded as a print starts, and as it ends the one
+ * file added since is that print's; its name is stored on the history record. A print
+ * whose end Layerwatch didn't see has no timelapse rather than a guessed one.
  */
 class Timelapses(
     private val printer: PrinterRepository,
@@ -52,30 +55,61 @@ class Timelapses(
 
     private fun beforeFile(key: String) = File(historyDir, "timelapse-before-" + PrintHistory.fileSafe(key, 60))
 
-    /** Record the timelapse files that exist as [key] starts. Idempotent. */
+    /**
+     * Record the timelapse files that exist as [key] starts. Idempotent. Retries while the
+     * printer's WiFi drops out: without this list the print's file can't be told apart.
+     */
     suspend fun snapshotBefore(key: String) = withContext(Dispatchers.IO) {
         if (printer.config.value?.isDemo == true) return@withContext
         val f = beforeFile(key)
-        if (f.exists()) return@withContext
-        runCatching {
-            val names = list().map { it.name }
-            historyDir.mkdirs()
-            f.writeText(names.joinToString("\n"))
-            Log.i(TAG, "recorded ${names.size} existing timelapses before $key")
-        }.onFailure { Log.w(TAG, "couldn't snapshot timelapses for $key: $it") }
+        repeat(SNAPSHOT_TRIES) { attempt ->
+            if (f.exists()) return@withContext
+            runCatching {
+                val names = list().map { it.name }
+                historyDir.mkdirs()
+                val tmp = File(historyDir, f.name + ".tmp")
+                tmp.writeText(names.joinToString("\n"))
+                tmp.renameTo(f)
+                Log.i(TAG, "recorded ${names.size} existing timelapses before $key")
+            }.onFailure {
+                Log.w(TAG, "couldn't snapshot timelapses for $key (try ${attempt + 1}): $it")
+                delay(RETRY_MS)
+            }
+        }
     }
 
     /**
-     * The timelapse of the print recorded as [key]. [nextKey] is the print followed after it
-     * (null for the newest): its own snapshot bounds the search, so a later print's video
-     * is never taken for this one's.
+     * Called as [key]'s print ends: waits for the printer to write that print's timelapse
+     * and returns its name. Null if none appears (timelapse off, or the print never got
+     * going) or if the file can't be singled out. The caller bounds the wait.
      */
-    suspend fun find(key: String, nextKey: String?): TimelapseRef? = withContext(Dispatchers.IO) {
+    suspend fun awaitNew(key: String): String? = withContext(Dispatchers.IO) {
         if (printer.config.value?.isDemo == true) return@withContext null
-        pick(list(), before(key), nextKey?.let(::before), isNewest = nextKey == null)
+        // Without the start list, a list taken now does: the file isn't written yet.
+        val baseline = beforeFile(key).takeIf { it.exists() }?.readLines()?.filter { it.isNotEmpty() }?.toSet()
+            ?: retrying { list().map { it.name }.toSet() }
+        var added: NewFile = NewFile.None
+        while (added == NewFile.None) {
+            delay(RETRY_MS)
+            added = runCatching { newFile(baseline, list()) }.getOrDefault(NewFile.None)
+        }
+        (added as? NewFile.One)?.name
+            .also { Log.i(TAG, if (it != null) "timelapse of $key is $it" else "several new timelapses since $key started; not linking") }
     }
 
-    private fun before(key: String) = beforeFile(key).takeIf { it.exists() }?.readLines()?.filter { it.isNotEmpty() }?.toSet()
+    /** [name] on the printer now, with its size; null if it's been deleted there. */
+    suspend fun find(name: String): TimelapseRef? = withContext(Dispatchers.IO) {
+        if (printer.config.value?.isDemo == true) return@withContext null
+        list().firstOrNull { it.name == name }?.let { TimelapseRef(it.name, it.size) }
+    }
+
+    private suspend fun <T> retrying(block: () -> T): T {
+        while (true) {
+            runCatching(block).onSuccess { return it }.onFailure { Log.w(TAG, "timelapse list failed: $it") }
+            delay(RETRY_MS)
+        }
+    }
+
     /** Small thumbnail the printer keeps for each timelapse; cached. */
     suspend fun thumbnail(ref: TimelapseRef): File? = withContext(Dispatchers.IO) {
         val out = File(cacheDir, "thumb-${ref.name.removeSuffix(".mp4")}.jpg")
@@ -125,27 +159,24 @@ class Timelapses(
             ?.forEach { it.delete() }
     }
 
+    internal sealed interface NewFile {
+        data object None : NewFile
+        data class One(val name: String) : NewFile
+        data object Several : NewFile
+    }
+
     internal companion object {
         private const val TAG = "layerwatch.timelapse"
+        private const val RETRY_MS = 10_000L
+        private const val SNAPSHOT_TRIES = 30
 
-        /**
-         * [before] / [nextBefore]: the timelapses that existed as this print and the next one
-         * started (null if never recorded). The print's video is the first file added
-         * between the two; later ones belong to prints after it, followed or not. Names
-         * (`video_<printer time>.mp4`) sort in the order the printer wrote them.
-         */
-        fun pick(now: List<RemoteFile>, before: Set<String>?, nextBefore: Set<String>?, isNewest: Boolean): TimelapseRef? {
-            val upTo = if (nextBefore != null) now.filter { it.name in nextBefore } else now
-            return when {
-                // More than one new file: prints Layerwatch didn't follow ran in between, and the
-                // printer's clock jumps, so name order is only a guess.
-                before != null -> upTo.filter { it.name !in before }.let { new ->
-                    new.minByOrNull { it.name }?.let { TimelapseRef(it.name, it.size, certain = new.size == 1) }
-                }
-                // Unrecorded start: the newest file before the next print is a fair guess; with
-                // neither bound, only the newest print may claim the newest file.
-                nextBefore != null || isNewest -> upTo.maxByOrNull { it.name }?.let { TimelapseRef(it.name, it.size, certain = false) }
-                else -> null
+        /** What the printer added to [now] since [baseline]: a finished print adds exactly one file. */
+        fun newFile(baseline: Set<String>, now: List<RemoteFile>): NewFile {
+            val added = now.filter { it.name !in baseline }
+            return when (added.size) {
+                0 -> NewFile.None
+                1 -> NewFile.One(added.single().name)
+                else -> NewFile.Several
             }
         }
     }

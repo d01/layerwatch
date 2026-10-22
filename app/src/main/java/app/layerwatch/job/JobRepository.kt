@@ -132,23 +132,10 @@ class JobRepository(
     }
 
     /**
-     * The run's own record when there is one. Otherwise (prints from before runs were
-     * recorded, or without a task id) a cached file of the same name, but only if its
-     * plate's layer count matches the record — a same-named file may be another plate or
-     * an older slice.
+     * The file and plate [record]'s run printed, as recorded when it loaded for that task.
+     * No guessing from same-named files: a name is reused across plates and re-slices.
      */
-    private fun archived(record: PrintRecord): CachedJob? {
-        readRun(record.key)?.let { return it }
-        val name = record.jobName ?: return null
-        return cachedVersions(name).firstNotNullOfOrNull { f ->
-            runCatching {
-                val plates = JobArchive.plates(f)
-                plates.firstOrNull { p ->
-                    if (record.totalLayers == null) plates.size == 1 else JobArchive.headerLayers(f, p) == record.totalLayers
-                }?.let { CachedJob(f, it) }
-            }.getOrNull()
-        }
-    }
+    private fun archived(record: PrintRecord): CachedJob? = readRun(record.key)
 
     /** Try again after a failure (e.g. the printer was unreachable). */
     fun retry() {
@@ -188,13 +175,6 @@ class JobRepository(
 
     /** Job name part of a cached file's name (older caches have no version). */
     private fun baseOf(f: File) = f.name.removeSuffix(".gcode.3mf").substringBefore('~')
-
-    /** Cached files for [name], most recently used first. */
-    private fun cachedVersions(name: String): List<File> {
-        val base = safeName(name)
-        return dir.listFiles { f -> f.name.endsWith(".gcode.3mf") && f.length() > 0 && baseOf(f) == base }
-            .orEmpty().sortedByDescending { it.lastModified() }
-    }
 
     private fun runFile(runKey: String) = File(dir, "run-" + runKey.filter { it.isLetterOrDigit() || it == '-' } + ".ref")
 

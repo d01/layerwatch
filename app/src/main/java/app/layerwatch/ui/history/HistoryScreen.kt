@@ -55,10 +55,9 @@ import java.time.format.FormatStyle
 fun HistoryScreen(records: List<PrintRecord>, history: PrintHistory, onBack: () -> Unit, initialOpen: String? = null) {
     val t = LocalBambuType.current
     var open by rememberSaveable { mutableStateOf(initialOpen) }
-    records.indexOfFirst { it.key == open }.takeIf { it >= 0 }?.let { i ->
-        // Newest first: the print followed after this one is the entry above it.
+    records.firstOrNull { it.key == open }?.let { r ->
         // Opened straight from the dashboard: back goes back there, not to the list.
-        HistoryEntryScreen(records[i], nextKey = records.getOrNull(i - 1)?.key, onBack = { if (initialOpen != null && open == initialOpen) onBack() else open = null })
+        HistoryEntryScreen(r, onBack = { if (initialOpen != null && open == initialOpen) onBack() else open = null })
         return
     }
     BackHandler(onBack = onBack)

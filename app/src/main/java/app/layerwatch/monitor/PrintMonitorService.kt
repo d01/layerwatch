@@ -93,7 +93,9 @@ class PrintMonitorService : Service() {
         val detector = PrintEventDetector()
         val history = app.history
         var key: String? = null
+        var over = false
         repo.status.filterNotNull().collect { s ->
+            if (over) return@collect
             if (s.jobState.isActive && key == null) {
                 key = PrintHistory.keyFor(s.taskId, s.jobName, System.currentTimeMillis())
                 history.begin(key!!, s.jobName, s.totalLayers, System.currentTimeMillis())
@@ -123,10 +125,21 @@ class PrintMonitorService : Service() {
             }
             if (s.jobState != JobState.Unknown && !s.jobState.isActive) {
                 // Ended without a finished/failed transition we saw (e.g. stopped to idle).
+                over = true
                 key?.let { history.finish(it, Outcome.Unknown, s.printError, System.currentTimeMillis()) }
-                Log.i(TAG, "print over (${s.jobState}); stopping once alerts are out")
+                Log.i(TAG, "print over (${s.jobState}); stopping once alerts are out and the timelapse is written")
+                // The printer writes the timelapse only now; seeing it appear is what ties it to this print.
+                val lapse = key?.let { k ->
+                    scope.launch {
+                        withTimeoutOrNull(TIMELAPSE_WAIT_MS) { app.timelapses.awaitNew(k) }?.let { history.attachTimelapse(k, it) }
+                    }
+                }
                 // The "finished" snapshot is the one people most want; let it land.
                 withTimeoutOrNull(SNAPSHOT_GRACE_MS) { alertJobs.joinAll() }
+                // Once another print has started, stop waiting on the old one's file.
+                val nextPrint = lapse?.let { l -> scope.launch { repo.status.first { it?.jobState?.isActive == true }; l.cancel() } }
+                lapse?.join()
+                nextPrint?.cancel()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
@@ -233,6 +246,8 @@ class PrintMonitorService : Service() {
         private const val LOST_AFTER_MS = 2 * 60_000L
         private const val NOTIFY_MIN_MS = 2_000L
         private const val SNAPSHOT_GRACE_MS = 15_000L
+        /** Seen: the file is there within a minute or two of the print finishing. */
+        private const val TIMELAPSE_WAIT_MS = 6 * 60_000L
         private const val WIDGET_FRAME_MS = 10 * 60_000L
         private const val CHANGE_WARN_MIN = 2
 

@@ -35,7 +35,7 @@ class TimelapseDownloadJob : JobService() {
         val name = params.extras.getString(EXTRA_NAME) ?: return false
         val size = params.extras.getLong(EXTRA_SIZE)
         val save = params.extras.getBoolean(EXTRA_SAVE)
-        val ref = TimelapseRef(name, size, certain = true)
+        val ref = TimelapseRef(name, size)
         val app = application as LayerwatchApp
         val nm = getSystemService(NotificationManager::class.java)
         ensureChannel(nm)

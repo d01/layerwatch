@@ -42,6 +42,17 @@ class PrintHistoryTest {
         assertNull(reloaded[0].totalLayers)
     }
 
+    @Test fun timelapseLinkSurvivesReload() = runBlocking {
+        PrintHistory(tmp.root).apply {
+            begin("task-1234", "case", 81, 1)
+            finish("task-1234", Outcome.Finished, null, 2)
+            attachTimelapse("task-1234", "video_2026-01-01_08-00-00.mp4")
+        }
+        val r = PrintHistory(tmp.root).records.value.single()
+        assertEquals("video_2026-01-01_08-00-00.mp4", r.timelapse)
+        assertEquals(Outcome.Finished, r.outcome)
+    }
+
     @Test fun keys() {
         assertEquals("task-7", PrintHistory.keyFor("7", "x", 5))
         assertEquals("job-x-5", PrintHistory.keyFor(null, "x", 5))

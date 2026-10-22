@@ -3,6 +3,7 @@ package app.layerwatch.history
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -44,6 +45,16 @@ class PrintHistoryTest {
     @Test fun keys() {
         assertEquals("task-7", PrintHistory.keyFor("7", "x", 5))
         assertEquals("job-x-5", PrintHistory.keyFor(null, "x", 5))
+    }
+
+    @Test fun longKeysStayDistinctAsFileNames() {
+        val one = PrintHistory.keyFor(null, "Voron stealthburner main body v2", 1_729_000_000_000)
+        val two = PrintHistory.keyFor(null, "Voron stealthburner main body v2", 1_729_000_600_000)
+        val a = PrintHistory.fileSafe(one, 40)
+        val b = PrintHistory.fileSafe(two, 40)
+        assertTrue(a != b)
+        assertTrue(a.length <= 40)
+        assertEquals("task-7", PrintHistory.fileSafe("task-7", 40)) // existing files keep their names
     }
 
     @Test fun reconcileClosesEntriesWhosePrintEnded() = runBlocking {

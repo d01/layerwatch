@@ -30,9 +30,9 @@ data class TimelapseRef(val name: String, val size: Long, val certain: Boolean) 
 /**
  * Finds each print's timelapse on the printer without trusting the printer's clock (it
  * has no time sync in LAN-only mode and its file names drift by hours): when a print is
- * first seen, the existing timelapse names are recorded; afterwards, a file that wasn't
- * there is that print's video. Prints recorded before that snapshot existed fall back to
- * the newest timelapse, marked uncertain.
+ * first seen, the existing timelapse names are recorded; the first file added after that,
+ * and before the next print's snapshot, is that print's video. Prints without a snapshot
+ * fall back to a guess, marked uncertain.
  */
 class Timelapses(
     private val printer: PrinterRepository,
@@ -50,7 +50,7 @@ class Timelapses(
         _downloads.value = _downloads.value + (name to d)
     }
 
-    private fun beforeFile(key: String) = File(historyDir, "timelapse-before-" + key.filter { it.isLetterOrDigit() || it == '-' }.take(60))
+    private fun beforeFile(key: String) = File(historyDir, "timelapse-before-" + PrintHistory.fileSafe(key, 60))
 
     /** Record the timelapse files that exist as [key] starts. Idempotent. */
     suspend fun snapshotBefore(key: String) = withContext(Dispatchers.IO) {
@@ -65,17 +65,17 @@ class Timelapses(
         }.onFailure { Log.w(TAG, "couldn't snapshot timelapses for $key: $it") }
     }
 
-    suspend fun find(key: String): TimelapseRef? = withContext(Dispatchers.IO) {
+    /**
+     * The timelapse of the print recorded as [key]. [nextKey] is the print followed after it
+     * (null for the newest): its own snapshot bounds the search, so a later print's video
+     * is never taken for this one's.
+     */
+    suspend fun find(key: String, nextKey: String?): TimelapseRef? = withContext(Dispatchers.IO) {
         if (printer.config.value?.isDemo == true) return@withContext null
-        val now = list()
-        val before = beforeFile(key).takeIf { it.exists() }?.readLines()?.toSet()
-        if (before != null) {
-            now.filter { it.name !in before }.maxByOrNull { it.name }?.let { TimelapseRef(it.name, it.size, certain = true) }
-        } else {
-            now.maxByOrNull { it.name }?.let { TimelapseRef(it.name, it.size, certain = false) }
-        }
+        pick(list(), before(key), nextKey?.let(::before), isNewest = nextKey == null)
     }
 
+    private fun before(key: String) = beforeFile(key).takeIf { it.exists() }?.readLines()?.filter { it.isNotEmpty() }?.toSet()
     /** Small thumbnail the printer keeps for each timelapse; cached. */
     suspend fun thumbnail(ref: TimelapseRef): File? = withContext(Dispatchers.IO) {
         val out = File(cacheDir, "thumb-${ref.name.removeSuffix(".mp4")}.jpg")
@@ -125,5 +125,28 @@ class Timelapses(
             ?.forEach { it.delete() }
     }
 
-    private companion object { const val TAG = "layerwatch.timelapse" }
+    internal companion object {
+        private const val TAG = "layerwatch.timelapse"
+
+        /**
+         * [before] / [nextBefore]: the timelapses that existed as this print and the next one
+         * started (null if never recorded). The print's video is the first file added
+         * between the two; later ones belong to prints after it, followed or not. Names
+         * (`video_<printer time>.mp4`) sort in the order the printer wrote them.
+         */
+        fun pick(now: List<RemoteFile>, before: Set<String>?, nextBefore: Set<String>?, isNewest: Boolean): TimelapseRef? {
+            val upTo = if (nextBefore != null) now.filter { it.name in nextBefore } else now
+            return when {
+                // More than one new file: prints Layerwatch didn't follow ran in between, and the
+                // printer's clock jumps, so name order is only a guess.
+                before != null -> upTo.filter { it.name !in before }.let { new ->
+                    new.minByOrNull { it.name }?.let { TimelapseRef(it.name, it.size, certain = new.size == 1) }
+                }
+                // Unrecorded start: the newest file before the next print is a fair guess; with
+                // neither bound, only the newest print may claim the newest file.
+                nextBefore != null || isNewest -> upTo.maxByOrNull { it.name }?.let { TimelapseRef(it.name, it.size, certain = false) }
+                else -> null
+            }
+        }
+    }
 }

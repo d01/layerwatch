@@ -79,10 +79,10 @@ private sealed interface Lapse {
     data class Found(val ref: TimelapseRef, val thumb: ImageBitmap?) : Lapse
 }
 
-/** One print: its timelapse from the printer (play / save), final snapshot and summary. */
+/** One print ([nextKey]: the one followed after it, which bounds its timelapse search): its timelapse from the printer (play / save), final snapshot and summary. */
 @OptIn(UnstableApi::class)
 @Composable
-fun HistoryEntryScreen(record: PrintRecord, onBack: () -> Unit) {
+fun HistoryEntryScreen(record: PrintRecord, nextKey: String?, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     val t = LocalBambuType.current
     val context = LocalContext.current
@@ -106,8 +106,8 @@ fun HistoryEntryScreen(record: PrintRecord, onBack: () -> Unit) {
         val release = app.printer.acquire()
         onDispose(release)
     }
-    LaunchedEffect(record.key) {
-        lapse = runCatching { app.timelapses.find(record.key) }.fold(
+    LaunchedEffect(record.key, nextKey) {
+        lapse = runCatching { app.timelapses.find(record.key, nextKey) }.fold(
             onSuccess = { ref ->
                 if (ref == null) Lapse.None("No timelapse for this print on the printer. Timelapse may have been off.")
                 else Lapse.Found(ref, app.timelapses.thumbnail(ref)?.let { BitmapFactory.decodeFile(it.path)?.asImageBitmap() })
@@ -195,7 +195,7 @@ fun HistoryEntryScreen(record: PrintRecord, onBack: () -> Unit) {
                     Text(
                         "%.1f MB on the printer".format(l.ref.size / 1e6) +
                             (if (ready != null) " · downloaded" else "") +
-                            if (l.ref.certain) "" else " · latest timelapse; this print's file couldn't be confirmed",
+                            if (l.ref.certain) "" else " · best guess; this print's file couldn't be confirmed",
                         style = t.caption, color = Palette.faint,
                     )
                 }

@@ -84,7 +84,7 @@ class PrintHistory(private val dir: File) {
     }
 
     suspend fun attachSnapshot(key: String, bitmap: Bitmap) {
-        val name = "snap-" + key.filter { it.isLetterOrDigit() || it == '-' }.take(40) + ".jpg"
+        val name = "snap-" + fileSafe(key, 40) + ".jpg"
         val tmp = File(dir, "$name.tmp")
         tmp.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 85, it) }
         tmp.renameTo(File(dir, name))
@@ -138,5 +138,15 @@ class PrintHistory(private val dir: File) {
         const val MAX_RECORDS = 200
 
         fun keyFor(taskId: String?, jobName: String?, nowMs: Long) = taskId?.let { "task-$it" } ?: "job-${jobName ?: "print"}-$nowMs"
+
+        /**
+         * [key] as a file name part of at most [max] characters. A longer key keeps its start
+         * plus a hash of the whole, so keys that differ only at the end (same job name, other
+         * time) never share a file; short keys map as they always have.
+         */
+        fun fileSafe(key: String, max: Int): String {
+            val safe = key.filter { it.isLetterOrDigit() || it == '-' }
+            return if (safe.length <= max) safe else safe.take(max - 9) + "-" + "%08x".format(key.hashCode())
+        }
     }
 }

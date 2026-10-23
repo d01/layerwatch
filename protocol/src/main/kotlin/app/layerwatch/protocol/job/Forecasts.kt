@@ -9,7 +9,10 @@ enum class FilamentVerdict { Enough, Tight, Short, Unknown }
 data class FilamentNeed(
     /** G-code tool = slicer filament slot, 0-based (slicer filament id − 1). */
     val tool: Int,
+    /** Still to print, the layer printing now included. */
     val neededG: Double,
+    /** Printed so far: the layers before the current one. */
+    val printedG: Double,
     val amsSlot: Int?,
     /** On the mapped spool plus any matching backup spools the AMS can auto-refill from. */
     val availableG: Double?,
@@ -36,8 +39,8 @@ data class FilamentNeed(
 
 object FilamentForecast {
     /**
-     * Grams each filament still needs after [currentLayer], against what its AMS spool
-     * holds. [mapping] is the printer's `mapping` (AMS slot per job filament); it is either
+     * Grams each filament still needs from [currentLayer] on, against what its AMS spool
+     * holds. The layer printing counts in full: overstating what's left beats running dry. [mapping] is the printer's `mapping` (AMS slot per job filament); it is either
      * indexed by slicer slot or lists the used filaments in order, so both are handled.
      */
     fun compute(
@@ -48,7 +51,9 @@ object FilamentForecast {
         trays: Map<Int, Tray>,
     ): List<FilamentNeed> {
         val usedTools = model.layers.flatMap { it.extrudedMmByTool.keys }.toSortedSet().toList()
-        return model.extrudedAfter(currentLayer).toSortedMap().map { (tool, mm) ->
+        val done = currentLayer - 1
+        val printed = model.extrudedThrough(done)
+        return model.extrudedAfter(done).toSortedMap().map { (tool, mm) ->
             val gPerMm = gramsPerMm(settings, tool)
             val slot = amsSlot(tool, usedTools, mapping)
             val primary = slot?.let { trays[it] }
@@ -57,10 +62,11 @@ object FilamentForecast {
             FilamentNeed(
                 tool = tool,
                 neededG = mm * gPerMm,
+                printedG = (printed[tool] ?: 0f) * gPerMm,
                 amsSlot = slot,
                 availableG = available,
                 backupSlots = backups.map { it.slot },
-                runsOutAtLayer = available?.let { runOutLayer(model, tool, currentLayer, it / gPerMm) },
+                runsOutAtLayer = available?.let { runOutLayer(model, tool, done, it / gPerMm) },
             )
         }
     }

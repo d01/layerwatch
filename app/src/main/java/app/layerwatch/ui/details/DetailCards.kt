@@ -90,7 +90,7 @@ fun FilamentCard(
             Text(label.uppercase(), style = t.eyebrow.copy(fontSize = t.tiny.fontSize), color = color)
             Text(n?.let { grams(it.neededG) } ?: "—", style = t.metric.copy(fontSize = t.metric.fontSize * 0.85f), color = Palette.text)
             Text(
-                n?.let { "still needed" + (it.availableG?.let { a -> " · spool ~${grams(a)}" } ?: "") } ?: "no data",
+                n?.let { "still to print" + (it.availableG?.let { a -> "\n~${grams(a)} on spool" } ?: "") } ?: "no data",
                 style = t.caption, color = Palette.muted,
             )
         }
@@ -106,16 +106,12 @@ fun FilamentCard(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (tray != null) Spool(tray, active = n.amsSlot == status?.activeSlot, size = 30.dp)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row {
-                        Text(
-                            listOfNotNull(n.amsSlot?.let { "Slot ${it % 4 + 1}" }, tray?.name ?: tray?.material).joinToString(" · ").ifBlank { "Filament ${n.tool + 1}" },
-                            style = t.label, color = Palette.text, modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            grams(n.neededG) + (n.availableG?.let { " of ~${grams(it)}" } ?: ""),
-                            style = t.mono, color = Palette.text,
-                        )
-                    }
+                    Text(
+                        listOfNotNull(n.amsSlot?.let { "Slot ${it % 4 + 1}" }, tray?.name ?: tray?.material).joinToString(" · ").ifBlank { "Filament ${n.tool + 1}" },
+                        style = t.label, color = Palette.text,
+                    )
+                    Text("${grams(n.neededG)} still to print", style = t.mono, color = Palette.text)
+                    n.availableG?.let { Text("~${grams(it)} on spool", style = t.mono, color = Palette.text) }
                     val avail = n.availableG
                     Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Palette.track)) {
                         if (avail != null && avail > 0) {
@@ -130,14 +126,15 @@ fun FilamentCard(
                 }
             }
         }
-        val s = job.slice
-        val slot = s?.filaments?.firstOrNull()?.id?.minus(1) ?: 0
-        val cost = s?.weightG?.let { w -> job.settings?.filamentCostPerKg(slot)?.let { w * it / 1000 } }
-        val footer = buildList {
-            needs.singleOrNull()?.leftAfterG?.let { add("≈ ${grams(it)} left after this print") }
-            s?.weightG?.let { w -> add("whole job ${"%.1f".format(w)} g" + (s.filaments.sumOf { it.usedM ?: 0.0 }.takeIf { it > 0 }?.let { ", %.1f m".format(it) } ?: "")) }
-            cost?.let { add("≈ $%.2f".format(it)) }
-        }.joinToString(" · ")
+        // Totals from the G-code itself, so printed + still to print add up. They run a little
+        // over the slicer's figure (Slicing card): it leaves part of the start-up purge out.
+        val footer = needs.singleOrNull()?.let { n ->
+            listOfNotNull(
+                "${grams(n.printedG)} printed so far",
+                "whole job ${grams(n.printedG + n.neededG)} incl. purges",
+                n.leftAfterG?.let { "≈ ${grams(it)} left on the spool after" },
+            ).joinToString(" · ")
+        }.orEmpty()
         if (footer.isNotBlank()) Text(footer, style = t.caption, color = Palette.muted)
     }
 }

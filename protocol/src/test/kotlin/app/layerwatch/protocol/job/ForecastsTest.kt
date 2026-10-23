@@ -30,16 +30,17 @@ class ForecastsTest {
     }
 
     @Test fun enoughTightShort() {
-        // Remaining after layer 4: 6 layers × 100 mm ≈ 1.79 g.
+        // At layer 4, layers 4–10 are still to print: 7 × 100 mm ≈ 2.09 g; 1–3 are done.
         fun verdict(pct: Int, weight: Int) = FilamentForecast.compute(model, null, 4, listOf(2), mapOf(2 to tray(2, pct, weight))).single()
         val enough = verdict(pct = 50, weight = 1000)
         assertEquals(FilamentVerdict.Enough, enough.verdict)
         assertEquals(2, enough.amsSlot)
-        assertEquals(1.79, enough.neededG, 0.01)
-        assertEquals(FilamentVerdict.Tight, verdict(pct = 95, weight = 2).verdict) // 1.9 g on spool: within 10%
-        val short = verdict(pct = 100, weight = 1) // 1 g ≈ 335 mm: lasts 3 more layers
+        assertEquals(2.09, enough.neededG, 0.01)
+        assertEquals(0.89, enough.printedG, 0.01)
+        assertEquals(FilamentVerdict.Tight, verdict(pct = 75, weight = 3).verdict) // 2.25 g on spool: within 10%
+        val short = verdict(pct = 100, weight = 1) // 1 g ≈ 335 mm: lasts layers 4–6
         assertEquals(FilamentVerdict.Short, short.verdict)
-        assertEquals(8, short.runsOutAtLayer)
+        assertEquals(7, short.runsOutAtLayer)
     }
 
     @Test fun unknownWithoutSpoolData() {

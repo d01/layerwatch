@@ -61,7 +61,9 @@ class JobArchiveTest {
         assertEquals((1..17).toList(), g.layers.map { it.number })
         assertEquals(2, g.initialTool) // M620 S2A: slicer filament 3
         assertTrue(g.toolChanges.isEmpty())
-        assertEquals(1029.74f, g.layers.sumOf { it.extrudedMm.toDouble() }.toFloat(), 0.05f) // incl. 134 arc moves
+        // Incl. 134 arc moves and the start G-code's prime line and purges, net of retractions;
+        // the slicer's used_m (1.23 m) leaves ~112 mm of that purge out.
+        assertEquals(1342.2f, g.layers.sumOf { it.extrudedMm.toDouble() }.toFloat(), 0.05f)
         val all = g.layers.flatMap { it.features }.toSet()
         assertTrue(Feature.OuterWall in all && Feature.Bridge in all && Feature.TopSurface in all && Feature.GapFill in all)
         // Paths are contiguous per layer and every path has at least a segment.

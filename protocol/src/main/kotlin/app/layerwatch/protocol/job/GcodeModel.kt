@@ -96,9 +96,14 @@ class GcodeModel(
     fun objectOf(path: Int): Int? = pathObject[path].takeIf { it != NO_OBJECT }
 
     /** Filament still to extrude after [layer] has finished, mm by tool. */
-    fun extrudedAfter(layer: Int): Map<Int, Float> {
+    fun extrudedAfter(layer: Int): Map<Int, Float> = extruded { it > layer }
+
+    /** Millimetres per tool up to and including [layer]. */
+    fun extrudedThrough(layer: Int): Map<Int, Float> = extruded { it <= layer }
+
+    private inline fun extruded(include: (Int) -> Boolean): Map<Int, Float> {
         val out = HashMap<Int, Float>()
-        for (l in layers) if (l.number > layer) for ((t, mm) in l.extrudedMmByTool) out[t] = (out[t] ?: 0f) + mm
+        for (l in layers) if (include(l.number)) for ((t, mm) in l.extrudedMmByTool) out[t] = (out[t] ?: 0f) + mm
         return out
     }
 

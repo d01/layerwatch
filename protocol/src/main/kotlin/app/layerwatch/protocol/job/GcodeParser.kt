@@ -154,7 +154,7 @@ object GcodeParser {
             if (layerNumber <= 0) return
             layers += GcodeLayer(
                 number = layerNumber, z = layerZ, firstPath = layerFirstPath, pathCount = pathCount - layerFirstPath,
-                plannedRemainingMin = layerRemaining, extrudedMmByTool = layerExtruded, features = layerFeatures,
+                plannedRemainingMin = layerRemaining, extrudedMmByTool = layerExtruded.filterValues { it > 0f }, features = layerFeatures,
             )
             layerExtruded = HashMap()
             layerFeatures = HashSet()
@@ -193,12 +193,16 @@ object GcodeParser {
                 else -> (e - lastE).also { lastE = e }
             }
             val moved = nx != x || ny != y
+            // All filament counts, net of retractions: prime line, purges and flushes too, as
+            // in the slicer's total. Before layer 1 it carries into layer 1.
+            if (de != 0f) {
+                val t = tool ?: initialTool ?: 0
+                layerExtruded[t] = (layerExtruded[t] ?: 0f) + de
+            }
             if (de > 0f && moved && layerNumber > 0) {
                 if (!inPath) beginPath()
                 if (arc) arcPoints(nx, ny, x + (ci ?: 0f), y + (cj ?: 0f), clockwise = code[1] == '2')
                 addPoint(nx, ny)
-                val t = tool ?: initialTool ?: 0
-                layerExtruded[t] = (layerExtruded[t] ?: 0f) + de
                 layerFeatures += feature
             } else if (moved) {
                 endPath()

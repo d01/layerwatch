@@ -1,7 +1,7 @@
 package app.layerwatch.job
 
 import android.util.Log
-import app.layerwatch.history.PrintHistory
+import app.layerwatch.history.PrintRun
 import app.layerwatch.history.PrintRecord
 import app.layerwatch.printer.PrinterRepository
 import app.layerwatch.printer.PrinterTls
@@ -18,13 +18,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** Which job file and plate is printing; [taskId] tells runs of the same file apart. */
-data class JobKey(val name: String, val plate: Int, val taskId: String? = null)
+/** Which job file and plate is printing; [runId] ([PrintRun.id]) tells prints of the same file apart. */
+data class JobKey(val name: String, val plate: Int, val runId: String? = null)
 
 /** A job file on the phone and the plate a print used from it. */
 private data class CachedJob(val file: File, val plate: Int)
@@ -53,6 +53,7 @@ class JobRepository(
     private val scope: CoroutineScope,
     private val printer: PrinterRepository,
     private val tls: PrinterTls,
+    private val runs: StateFlow<PrintRun?>,
     private val dir: File,
     private val assets: android.content.res.AssetManager,
 ) {
@@ -63,15 +64,14 @@ class JobRepository(
     /** When each layer of the active job was seen starting (for the pace estimate). */
     private val _samples = MutableStateFlow<List<LayerSample>>(emptyList())
     val samples: StateFlow<List<LayerSample>> = _samples.asStateFlow()
-    /** Whose samples [_samples] holds: the job plus the printer's task id for this run. */
-    private var samplesKey: Pair<JobKey, String?>? = null
+    /** Whose samples [_samples] holds: a [PrintRun.id]. */
+    private var samplesRun: String? = null
     private var lastSeenLayer: Int? = null
 
     init {
-        scope.launch(Dispatchers.IO) { printer.status.collect(::recordLayer) }
+        scope.launch(Dispatchers.IO) { combine(printer.status, runs, ::Pair).collect { (s, run) -> recordLayer(s, run) } }
         scope.launch {
-            printer.status
-                .map { s -> s?.takeIf { it.jobState.isActive }?.jobName?.let { JobKey(it, s.plateIndex ?: 1, s.taskId) } }
+            combine(printer.status, runs, ::activeKey)
                 .distinctUntilChanged()
                 .collect { key -> if (key != null) load(key) }
         }
@@ -82,20 +82,20 @@ class JobRepository(
      * opening the app mid-layer doesn't skew the pace. The very first sighting of a job
      * is kept too, as the anchor for the slicer's plan.
      */
-    private fun recordLayer(s: PrinterStatus?) {
-        val key = s?.takeIf { it.jobState.isActive }?.jobName?.let { JobKey(it, s.plateIndex ?: 1, s.taskId) } ?: return
-        val layer = s.layer?.takeIf { it > 0 } ?: return
-        // The same file printed again is a new task, with its own pace and plan anchor.
-        val run = key to s.taskId
-        if (run != samplesKey) {
-            samplesKey = run
+    private fun recordLayer(s: PrinterStatus?, run: PrintRun?) {
+        val key = activeKey(s, run) ?: return
+        val runId = key.runId ?: return
+        val layer = s?.layer?.takeIf { it > 0 } ?: return
+        // The same file printed again is a new run, with its own pace and plan anchor.
+        if (runId != samplesRun) {
+            samplesRun = runId
             lastSeenLayer = null
-            _samples.value = loadSamples(key, s.taskId)
+            _samples.value = loadSamples(key)
         }
         // Without a task id, a layer below the last sample means a new print of the same job.
-        if (s.taskId == null && (_samples.value.lastOrNull()?.layer ?: 0) > layer) {
+        if (run?.taskId == null && (_samples.value.lastOrNull()?.layer ?: 0) > layer) {
             _samples.value = emptyList()
-            runCatching { samplesFile(key, null).delete() }
+            runCatching { samplesFile(key).delete() }
         }
         val seen = lastSeenLayer
         lastSeenLayer = layer
@@ -104,17 +104,24 @@ class JobRepository(
         if ((observedChange && (last == null || layer > last)) || _samples.value.isEmpty()) {
             val sample = LayerSample(layer, System.currentTimeMillis())
             _samples.value = _samples.value + sample
-            runCatching { samplesFile(key, s.taskId).appendText("${sample.layer},${sample.atMs}\n") }
+            runCatching { samplesFile(key).appendText("${sample.layer},${sample.atMs}\n") }
         }
     }
 
-    private fun samplesFile(key: JobKey, taskId: String?) = File(
+    /** The job being printed and its run; null until the run tracker has caught up with [s]. */
+    private fun activeKey(s: PrinterStatus?, run: PrintRun?): JobKey? {
+        val name = s?.takeIf { it.jobState.isActive }?.jobName ?: return null
+        val r = run?.takeIf { it.isActive && it.matches(s) } ?: return null
+        return JobKey(name, s.plateIndex ?: 1, r.id)
+    }
+
+    private fun samplesFile(key: JobKey) = File(
         dir.apply { mkdirs() },
-        safeName(key.name) + (taskId?.let { "-task-" + it.filter(Char::isLetterOrDigit) } ?: "") + ".layers",
+        safeName(key.name) + "-" + key.runId.orEmpty().filter { it.isLetterOrDigit() || it == '-' } + ".layers",
     )
 
-    private fun loadSamples(key: JobKey, taskId: String?): List<LayerSample> = runCatching {
-        samplesFile(key, taskId).readLines().mapNotNull { line ->
+    private fun loadSamples(key: JobKey): List<LayerSample> = runCatching {
+        samplesFile(key).readLines().mapNotNull { line ->
             val (l, t) = line.split(',').takeIf { it.size == 2 } ?: return@mapNotNull null
             LayerSample(l.toIntOrNull() ?: return@mapNotNull null, t.toLongOrNull() ?: return@mapNotNull null)
         }
@@ -148,11 +155,11 @@ class JobRepository(
         loading?.cancel()
         loading = scope.launch(Dispatchers.IO) {
             try {
-                val file = key.taskId?.let { readRun(PrintHistory.keyFor(it, key.name, 0)) }?.file
+                val file = key.runId?.let(::readRun)?.file
                     ?: download(key)
                     ?: return@launch
                 if (key.plate !in JobArchive.plates(file)) error("The printer's job file doesn't include plate ${key.plate}")
-                key.taskId?.let { writeRun(PrintHistory.keyFor(it, key.name, 0), CachedJob(file, key.plate)) }
+                key.runId?.let { writeRun(it, CachedJob(file, key.plate)) }
                 _state.value = JobLoad.Parsing(key)
                 val started = System.currentTimeMillis()
                 val job = withContext(Dispatchers.Default) { JobArchive.read(file, key.plate) }
@@ -242,7 +249,7 @@ class JobRepository(
             .filter { ref -> runCatching { ref.readLines().first() }.getOrNull() !in keptNames }
             .forEach { it.delete() }
         dir.listFiles { f -> f.name.endsWith(".layers") }.orEmpty()
-            .filter { f -> f.name.removeSuffix(".layers").let { b -> keptBases.none { b == it || b.startsWith("$it-task-") } } }
+            .filter { f -> f.name.removeSuffix(".layers").let { b -> keptBases.none { b == it || b.startsWith("$it-task-") || b.startsWith("$it-run-") } } }
             .forEach { it.delete() }
     }
 

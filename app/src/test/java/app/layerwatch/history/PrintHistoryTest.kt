@@ -53,14 +53,9 @@ class PrintHistoryTest {
         assertEquals(Outcome.Finished, r.outcome)
     }
 
-    @Test fun keys() {
-        assertEquals("task-7", PrintHistory.keyFor("7", "x", 5))
-        assertEquals("job-x-5", PrintHistory.keyFor(null, "x", 5))
-    }
-
     @Test fun longKeysStayDistinctAsFileNames() {
-        val one = PrintHistory.keyFor(null, "Voron stealthburner main body v2", 1_729_000_000_000)
-        val two = PrintHistory.keyFor(null, "Voron stealthburner main body v2", 1_729_000_600_000)
+        val one = "job-Voron stealthburner main body v2-1729000000000"
+        val two = "job-Voron stealthburner main body v2-1729000600000"
         val a = PrintHistory.fileSafe(one, 40)
         val b = PrintHistory.fileSafe(two, 40)
         assertTrue(a != b)

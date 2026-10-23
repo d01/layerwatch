@@ -10,7 +10,6 @@ import app.layerwatch.LayerwatchApp
 import app.layerwatch.printer.printerModelName
 import app.layerwatch.camera.Snapshot
 import app.layerwatch.history.Outcome
-import app.layerwatch.history.PrintHistory
 import app.layerwatch.job.JobLoad
 import app.layerwatch.protocol.JobState
 import app.layerwatch.protocol.PrinterStatus
@@ -97,11 +96,14 @@ class PrintMonitorService : Service() {
         repo.status.filterNotNull().collect { s ->
             if (over) return@collect
             if (s.jobState.isActive && key == null) {
-                key = PrintHistory.keyFor(s.taskId, s.jobName, System.currentTimeMillis())
-                history.begin(key!!, s.jobName, s.totalLayers, System.currentTimeMillis())
-                // Note which timelapses already exist, so the one this print adds can be found.
-                val k = key!!
-                scope.launch { app.timelapses.snapshotBefore(k) }
+                // The app's run tracker sees this report too; wait for it to name the run.
+                val run = withTimeoutOrNull(RUN_WAIT_MS) { app.runs.current.first { it != null && it.isActive && it.matches(s) } }
+                if (run != null) {
+                    key = run.id
+                    history.begin(run.id, s.jobName, s.totalLayers, System.currentTimeMillis())
+                    // Note which timelapses already exist, so the one this print adds can be found.
+                    scope.launch { app.timelapses.snapshotBefore(run.id) }
+                }
             }
             detector.update(s).forEach { e ->
                 Log.i(TAG, "event: $e")
@@ -246,6 +248,7 @@ class PrintMonitorService : Service() {
         private const val LOST_AFTER_MS = 2 * 60_000L
         private const val NOTIFY_MIN_MS = 2_000L
         private const val SNAPSHOT_GRACE_MS = 15_000L
+        private const val RUN_WAIT_MS = 5_000L
         /** Seen: the file is there within a minute or two of the print finishing. */
         private const val TIMELAPSE_WAIT_MS = 6 * 60_000L
         private const val WIDGET_FRAME_MS = 10 * 60_000L

@@ -21,7 +21,7 @@ enum class Outcome { InProgress, Finished, Failed, Stopped, Unknown }
 
 /** One print the monitor followed. */
 data class PrintRecord(
-    /** `task_id` when the printer reports one, else name + first-seen time. */
+    /** The print's [PrintRun.id]; records from before runs existed use `task-<task id>`. */
     val key: String,
     val jobName: String?,
     /** When Layerwatch first saw it running — the print may have started earlier. */
@@ -144,8 +144,6 @@ class PrintHistory(private val dir: File) {
 
     companion object {
         const val MAX_RECORDS = 200
-
-        fun keyFor(taskId: String?, jobName: String?, nowMs: Long) = taskId?.let { "task-$it" } ?: "job-${jobName ?: "print"}-$nowMs"
 
         /**
          * [key] as a file name part of at most [max] characters. A longer key keeps its start

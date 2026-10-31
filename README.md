@@ -18,6 +18,8 @@ No cloud account, no ads, no tracking: the phone talks to the printer directly.
 - **Controls with safety catches.** Chamber light, plus pause, stop and print speed. Pause
   and stop need a four-second press-and-hold, and speed changes must first be unlocked
   with a hold.
+- **AMS drying.** Start and stop drying on an AMS 2 Pro or AMS HT, with the temperatures
+  and times from Bambu Studio's filament profiles. Stopping takes a two-second hold.
 - **Alerts with the phone locked.** While a print runs, a foreground service keeps
   watching after the app is closed:
   - Android 16 and later show a Live Update progress notification.

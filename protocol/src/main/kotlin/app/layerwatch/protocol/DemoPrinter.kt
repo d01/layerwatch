@@ -22,7 +22,7 @@ import kotlin.math.min
  * A simulated printer, so the app can be explored without one (and reviewed by people
  * who don't own a Bambu printer). It loops through a short print of the bundled demo job
  * [JOB_NAME] — heating, printing [LAYERS] layers, finished, idle — and responds to the
- * light, pause, resume, stop, speed and skip-object controls.
+ * light, pause, resume, stop, speed, skip-object and AMS drying controls.
  *
  * It emits genuine `push_status` reports through [ReportMerger] and [PrinterStatus.from],
  * so the demo exercises the same parsing as a real printer.
@@ -49,6 +49,9 @@ class DemoPrinter(
     private var light = true
     private var speed = SpeedLevel.Standard
     private var skipped = emptySet<Int>()
+    /** Seconds of AMS drying left; null when not drying. Runs on real time, not print time. */
+    private var dryLeftSec: Double? = null
+    private var dryTempC = 0
     /** Unique per simulated print, so history never mistakes a new demo run for an old one. */
     private var taskId = newTaskId()
 
@@ -82,6 +85,10 @@ class DemoPrinter(
     override fun stopPrint(): Boolean = act { if (printing() || paused) { cancelledAtSec = phaseSec; paused = false } }
     override fun setSpeed(level: SpeedLevel): Boolean = act { speed = level }
     override fun skipObjects(ids: List<Int>): Boolean = act { if (printing() || paused) skipped = skipped + ids }
+    override fun startDrying(amsId: Int, settings: DryingSettings): Boolean = act {
+        if (amsId == 0 && (phaseSec > PREPARE_S + PRINT_S || cancelledAtSec != null)) { dryLeftSec = settings.hours * 3600.0; dryTempC = settings.tempC }
+    }
+    override fun stopDrying(amsId: Int): Boolean = act { if (amsId == 0) dryLeftSec = null }
 
     private fun act(change: () -> Unit): Boolean {
         change()
@@ -93,6 +100,7 @@ class DemoPrinter(
 
     /** Advances simulated time; [seconds] scaled by print speed while printing. */
     internal fun advance(seconds: Double) {
+        dryLeftSec = dryLeftSec?.minus(seconds)?.takeIf { it > 0 }
         if (paused) return
         val factor = if (printing() && phaseSec >= PREPARE_S) speed.percent / 100.0 else 1.0
         phaseSec += seconds * factor
@@ -106,6 +114,7 @@ class DemoPrinter(
         cancelledAtSec = null
         paused = false
         skipped = emptySet()
+        dryLeftSec = null // the next print needs the AMS
         taskId = newTaskId()
     }
 
@@ -196,11 +205,12 @@ class DemoPrinter(
                     putJsonArray("ams") {
                         add(buildJsonObject {
                             put("id", "0")
-                            put("info", "2003")
+                            val drying = dryLeftSec
+                            put("info", if (drying != null) "2023" else "2003")
                             put("humidity", "2")
-                            put("humidity_raw", "31")
-                            put("temp", "26.5")
-                            put("dry_time", 0)
+                            put("humidity_raw", if (drying != null) "18" else "31")
+                            put("temp", if (drying != null) dryTempC.toString() else "26.5")
+                            put("dry_time", drying?.let { ceil(it / 60).toInt() } ?: 0)
                             put("tray", buildJsonArray {
                                 add(tray(0, "PLA", "PLA Basic", "FFFFFFFF", 64))
                                 add(tray(1, "PLA", "PLA Basic", "F4B04AFF", 88))

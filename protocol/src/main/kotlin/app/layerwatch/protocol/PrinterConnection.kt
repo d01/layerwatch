@@ -119,6 +119,8 @@ class PrinterConnection(
     override fun stopPrint(): Boolean = send(PrinterCommands.stop(nextSequence()))
     override fun setSpeed(level: SpeedLevel): Boolean = send(PrinterCommands.speed(nextSequence(), level))
     override fun skipObjects(ids: List<Int>): Boolean = send(PrinterCommands.skipObjects(nextSequence(), ids))
+    override fun startDrying(amsId: Int, settings: DryingSettings): Boolean = send(PrinterCommands.startDrying(nextSequence(), amsId, settings))
+    override fun stopDrying(amsId: Int): Boolean = send(PrinterCommands.stopDrying(nextSequence(), amsId))
 
     private fun nextSequence() = sequence.getAndIncrement()
 

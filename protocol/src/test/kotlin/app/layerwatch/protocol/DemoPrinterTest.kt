@@ -68,4 +68,18 @@ class DemoPrinterTest {
         step(400) // past the cycle's end
         assertEquals(emptySet<Int>(), demo.status.value!!.skippedObjects)
     }
+
+    @Test fun dryingStartsOnlyWhenIdleAndStops() {
+        step(60) // printing
+        demo.startDrying(0, DryingSettings("PLA", 55, 2, rotateSpools = false))
+        assertEquals(false, demo.status.value!!.ams.single().isDrying)
+        step(300) // finished
+        demo.startDrying(0, DryingSettings("PLA", 55, 2, rotateSpools = false))
+        val unit = demo.status.value!!.ams.single()
+        assertEquals(DryStatus.Drying, unit.dryStatus)
+        assertEquals(120, unit.dryMinutesLeft)
+        demo.stopDrying(0)
+        assertEquals(DryStatus.Off, demo.status.value!!.ams.single().dryStatus)
+        assertEquals(0, demo.status.value!!.ams.single().dryMinutesLeft)
+    }
 }

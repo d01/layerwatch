@@ -175,10 +175,6 @@ data class PrinterStatus(
     val nozzleDiameter: String?,
     /** AMS slot (global, amsId*4+tray) feeding each of the job's filaments, from `mapping`. */
     val amsMapping: List<Int>,
-    /**
-     * The printer advertises remote AMS drying (`fun2` bit 5, as Bambu Studio checks).
-     * False on the X1C as of firmware 01.12; controls should only appear when true.
-     */
     /** From `ipcam.rtsp_url`; null until the printer has reported its camera block. */
     val liveview: Liveview?,
     /**
@@ -186,6 +182,10 @@ data class PrinterStatus(
      * 29, as ha-bambulab checks). Pause, stop, speed and light are then refused.
      */
     val commandsLocked: Boolean,
+    /**
+     * The printer advertises remote AMS drying (`fun2` bit 5, as Bambu Studio checks).
+     * Not a gate: it's clear on the X1C, which still starts and stops drying remotely.
+     */
     val supportsRemoteDrying: Boolean = false,
     /** Firmware accepts `skip_objects` (`fun` bit 49, as Bambu Studio checks). */
     val supportsSkipObjects: Boolean = false,

@@ -37,6 +37,32 @@ object PrinterCommands {
         }
     }.toString()
 
+    /**
+     * Start drying one AMS unit, in Bambu Studio's shape. Verified on an X1C with an
+     * AMS 2 Pro even though its `fun2` doesn't advertise remote drying.
+     */
+    fun startDrying(seq: Long, amsId: Int, settings: DryingSettings) =
+        drying(seq, amsId, mode = 1, settings.filament, settings.tempC, settings.hours, settings.rotateSpools)
+
+    /** Stop drying: mode 0 with no temperature or duration. */
+    fun stopDrying(seq: Long, amsId: Int) = drying(seq, amsId, mode = 0, filament = "", tempC = 0, hours = 0, rotate = false)
+
+    private fun drying(seq: Long, amsId: Int, mode: Int, filament: String, tempC: Int, hours: Int, rotate: Boolean) = buildJsonObject {
+        putJsonObject("print") {
+            put("sequence_id", seq.toString())
+            put("command", "ams_filament_drying")
+            put("ams_id", amsId)
+            put("mode", mode)
+            put("filament", filament)
+            put("temp", tempC)
+            put("duration", hours)
+            put("humidity", 0)
+            put("rotate_tray", rotate)
+            put("cooling_temp", DryingSettings.COOLING_C)
+            put("close_power_conflict", false)
+        }
+    }.toString()
+
     fun chamberLight(seq: Long, on: Boolean) = buildJsonObject {
         putJsonObject("system") {
             put("sequence_id", seq.toString())

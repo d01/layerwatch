@@ -21,4 +21,6 @@ interface PrinterLink {
     fun stopPrint(): Boolean
     fun setSpeed(level: SpeedLevel): Boolean
     fun skipObjects(ids: List<Int>): Boolean
+    fun startDrying(amsId: Int, settings: DryingSettings): Boolean
+    fun stopDrying(amsId: Int): Boolean
 }

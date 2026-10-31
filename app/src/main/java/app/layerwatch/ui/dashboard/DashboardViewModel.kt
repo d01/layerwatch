@@ -8,6 +8,7 @@ import app.layerwatch.history.Outcome
 import app.layerwatch.history.PrintRecord
 import app.layerwatch.monitor.PrintMonitorService
 import app.layerwatch.printer.NetworkState
+import app.layerwatch.protocol.DryingSettings
 import app.layerwatch.protocol.LinkState
 import app.layerwatch.protocol.PrinterStatus
 import app.layerwatch.protocol.SpeedLevel
@@ -44,10 +45,18 @@ data class DashboardState(
     val jobControlEnabled: Boolean,
     /** Seconds left in the speed-change window opened by the 4 s unlock hold; 0 = locked. */
     val speedUnlockSec: Long = 0,
+    /** Drying starts and stops sent but not yet seen in a report, by AMS id. */
+    val dryRequests: Map<Int, DryRequest> = emptyMap(),
 ) {
     val speedUnlocked get() = speedUnlockSec > 0
     val isLive get() = health == Health.Live
 }
+
+/**
+ * A drying start or stop the app sent. [unconfirmed] once the printer has had
+ * [DashboardViewModel.DRY_CONFIRM_MS] to show it and hasn't, which usually means it refused.
+ */
+data class DryRequest(val start: Boolean, val unconfirmed: Boolean)
 
 class DashboardViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = (app as LayerwatchApp).printer
@@ -59,6 +68,8 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private val pendingLight = MutableStateFlow<Pair<Boolean, Long>?>(null)
     private val speedUnlockedUntil = MutableStateFlow(0L)
+    /** AMS id → (start?, sent at). Cleared once a report shows the change, or after a while. */
+    private val dryRequests = MutableStateFlow<Map<Int, Pair<Boolean, Long>>>(emptyMap())
 
     /** HMS notices the user dismissed; they stay hidden until a different code appears. */
     private val _dismissedHms = MutableStateFlow<Set<String>>(emptySet())
@@ -77,8 +88,8 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
 
     val state: StateFlow<DashboardState> = combine(
         repo.link, repo.network.state, repo.status, repo.lastReportAtMs,
-        combine(ticker, pendingLight, speedUnlockedUntil, ::Triple),
-    ) { link, net, status, lastAt, (now, pending, unlockUntil) ->
+        combine(ticker, pendingLight, speedUnlockedUntil, dryRequests, ::Ticks),
+    ) { link, net, status, lastAt, (now, pending, unlockUntil, dry) ->
         val reported = status?.chamberLightOn
         val optimistic = pending?.takeIf { (value, at) -> value != reported && now - at < LIGHT_PENDING_MS }?.first
         DashboardState(
@@ -90,6 +101,11 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
             chamberLightOn = optimistic ?: reported,
             jobControlEnabled = JOB_CONTROL_ENABLED,
             speedUnlockSec = ((unlockUntil - now + 999) / 1000).coerceAtLeast(0),
+            dryRequests = dry.mapNotNull { (id, req) ->
+                val (start, at) = req
+                val seen = status?.ams?.firstOrNull { it.id == id }?.isDrying == start
+                if (seen || now - at >= DRY_FORGET_MS) null else id to DryRequest(start, unconfirmed = now - at >= DRY_CONFIRM_MS)
+            }.toMap(),
         )
     }.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5_000),
@@ -155,6 +171,16 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
         command { it.setSpeed(level) }
     }
 
+    fun startDrying(amsId: Int, settings: DryingSettings) = dryCommand(amsId, start = true) { it.startDrying(amsId, settings) }
+    fun stopDrying(amsId: Int) = dryCommand(amsId, start = false) { it.stopDrying(amsId) }
+
+    private fun dryCommand(amsId: Int, start: Boolean, block: (app.layerwatch.protocol.PrinterLink) -> Boolean) {
+        val conn = repo.connection.value ?: return
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            if (block(conn)) dryRequests.value = dryRequests.value + (amsId to (start to System.currentTimeMillis()))
+        }
+    }
+
     private fun command(block: (app.layerwatch.protocol.PrinterLink) -> Boolean) {
         if (!JOB_CONTROL_ENABLED) return
         val conn = repo.connection.value ?: return
@@ -169,9 +195,14 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
         else -> Health.Connecting
     }
 
-    private companion object {
-        const val LIGHT_PENDING_MS = 5_000L
-        const val SPEED_UNLOCK_MS = 20_000L
-        const val JOB_CONTROL_ENABLED = true
+    private data class Ticks(val now: Long, val light: Pair<Boolean, Long>?, val unlockUntil: Long, val dry: Map<Int, Pair<Boolean, Long>>)
+
+    companion object {
+        /** The X1C shows a drying change in its next report, within ~2 s; allow for weak WiFi. */
+        const val DRY_CONFIRM_MS = 15_000L
+        private const val DRY_FORGET_MS = 60_000L
+        private const val LIGHT_PENDING_MS = 5_000L
+        private const val SPEED_UNLOCK_MS = 20_000L
+        private const val JOB_CONTROL_ENABLED = true
     }
 }

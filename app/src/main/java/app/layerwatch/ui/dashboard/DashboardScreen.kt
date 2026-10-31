@@ -52,6 +52,7 @@ import app.layerwatch.ui.components.CameraAspect
 import app.layerwatch.ui.components.CameraPanel
 import app.layerwatch.ui.components.ControlRow
 import app.layerwatch.ui.components.ControlStyle
+import app.layerwatch.ui.components.DryingActions
 import app.layerwatch.ui.components.FanGrid
 import app.layerwatch.ui.components.Format
 import app.layerwatch.ui.components.Glyph
@@ -89,6 +90,7 @@ private class Dash(
 ) {
     val live get() = state.isLive
     val model = app.layerwatch.protocol.PrinterModel.fromSerial(config.serial)
+    val drying = DryingActions(state, vm::startDrying, vm::stopDrying)
     var dismissed: Set<String> = emptySet()
     var lastPrint: app.layerwatch.history.PrintRecord? = null
     var onOpenRecord: (String) -> Unit = {}
@@ -178,7 +180,7 @@ private fun FoldedLayout(d: Dash) {
             if (isIdle(s)) ReadyCard(s!!, d.live, d.lastPrint, d.onOpenRecord, Modifier.fillMaxWidth())
             else JobCard(s, d.state.nowMs, d.live, Modifier.fillMaxWidth(), onDetails = d.onDetails)
             TempTiles(s, d.live, d.model, Modifier.fillMaxWidth())
-            AmsCard(s, Modifier.fillMaxWidth())
+            AmsCard(s, Modifier.fillMaxWidth(), d.drying)
             Panel(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 FanGrid(s)
                 SpeedControl(d.state, d.vm::unlockSpeed, d.vm::setSpeed)
@@ -216,7 +218,7 @@ private fun UnfoldedLayout(d: Dash) {
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { MoreMenu(d) }
             TempList(s, d.live, d.model, Modifier.fillMaxWidth())
-            AmsList(s, Modifier.fillMaxWidth())
+            AmsList(s, Modifier.fillMaxWidth(), d.drying)
             Panel(Modifier.fillMaxWidth(), padding = 16.dp, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 FanGrid(s, compact = true)
                 SpeedControl(d.state, d.vm::unlockSpeed, d.vm::setSpeed)

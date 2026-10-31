@@ -396,8 +396,7 @@ private fun amsTitle(unit: AmsUnit, many: Boolean) =
 
 /**
  * Drying state for AMS units that can dry: "Drying · 9h 43m left · 63.2 °C now" in amber
- * while it runs (started from the printer's screen; remote start isn't offered on the X1C
- * yet). Reasons the printer can't dry are shown only around an attempt, since during a
+ * while it runs, whether started here ([DryingControls]) or on the printer. Reasons the printer can't dry are shown only around an attempt, since during a
  * print it always reports itself busy.
  */
 @Composable
@@ -428,7 +427,7 @@ fun DryingLine(unit: AmsUnit, modifier: Modifier = Modifier) {
 
 /** Four spools in a grid (folded layout). */
 @Composable
-fun AmsCard(s: PrinterStatus?, modifier: Modifier = Modifier) {
+fun AmsCard(s: PrinterStatus?, modifier: Modifier = Modifier, drying: DryingActions? = null) {
     val t = LocalBambuType.current
     val units = s?.ams.orEmpty()
     if (units.isEmpty()) return
@@ -439,6 +438,7 @@ fun AmsCard(s: PrinterStatus?, modifier: Modifier = Modifier) {
                 Text(amsSummary(unit), style = t.label, color = Palette.muted)
             }
             DryingLine(unit)
+            if (drying != null) DryingControls(unit, s!!, drying)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 unit.trays.forEach { tray ->
                     val active = tray.slot == s?.activeSlot
@@ -456,7 +456,7 @@ fun AmsCard(s: PrinterStatus?, modifier: Modifier = Modifier) {
 
 /** One spool per row with a remaining bar (unfolded side column). */
 @Composable
-fun AmsList(s: PrinterStatus?, modifier: Modifier = Modifier) {
+fun AmsList(s: PrinterStatus?, modifier: Modifier = Modifier, drying: DryingActions? = null) {
     val t = LocalBambuType.current
     val units = s?.ams.orEmpty()
     if (units.isEmpty()) return
@@ -467,6 +467,7 @@ fun AmsList(s: PrinterStatus?, modifier: Modifier = Modifier) {
                 Text(amsSummary(unit), style = t.caption, color = Palette.muted)
             }
             DryingLine(unit)
+            if (drying != null) DryingControls(unit, s!!, drying)
             unit.trays.forEach { tray ->
                 val active = tray.slot == s?.activeSlot
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

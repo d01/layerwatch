@@ -90,7 +90,7 @@ private class Dash(
 ) {
     val live get() = state.isLive
     val model = app.layerwatch.protocol.PrinterModel.fromSerial(config.serial)
-    val drying = DryingActions(state, vm::startDrying, vm::stopDrying)
+    val drying = DryingActions(state, model, vm::startDrying, vm::stopDrying)
     var dismissed: Set<String> = emptySet()
     var lastPrint: app.layerwatch.history.PrintRecord? = null
     var onOpenRecord: (String) -> Unit = {}

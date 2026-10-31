@@ -83,6 +83,8 @@ data class Tray(
     val remainingPercent: Int?,
     /** Full spool net weight in grams (`tray_weight`), when the RFID tag says. */
     val spoolWeightG: Int?,
+    /** Bambu's filament product id (`tray_info_idx`, e.g. GFA00 for PLA Basic). */
+    val filamentId: String? = null,
 ) {
     /** Estimated grams left on the spool, when both remaining % and spool weight are known. */
     val remainingG: Double? get() = if (remainingPercent != null && spoolWeightG != null) spoolWeightG * remainingPercent / 100.0 else null
@@ -91,6 +93,9 @@ data class Tray(
 /** AMS model, from bits 0–3 of the unit's `info` (Bambu Studio's DevAmsType). */
 enum class AmsType(val label: String, val canDry: Boolean, val maxDryC: Int) {
     Ams("AMS", false, 0), AmsLite("AMS Lite", false, 0), Ams2Pro("AMS 2 Pro", true, 65), AmsHt("AMS HT", true, 85), Unknown("AMS", false, 0);
+
+    /** Lowest drying temperature Bambu Studio accepts (45 °C on both drying models). */
+    val minDryC: Int get() = 45
 
     companion object {
         fun of(code: Int) = when (code) { 1 -> Ams; 2 -> AmsLite; 3 -> Ams2Pro; 4 -> AmsHt; else -> Unknown }
@@ -279,6 +284,7 @@ data class PrinterStatus(
                             colorHex = t.str("tray_color")?.takeIf { it.isNotBlank() },
                             remainingPercent = t.int("remain")?.takeIf { it in 0..100 },
                             spoolWeightG = t.int("tray_weight")?.takeIf { it > 0 },
+                            filamentId = t.str("tray_info_idx")?.takeIf { it.isNotBlank() },
                         )
                     },
                 )

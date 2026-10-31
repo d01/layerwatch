@@ -42,12 +42,13 @@ object PrinterCommands {
      * AMS 2 Pro even though its `fun2` doesn't advertise remote drying.
      */
     fun startDrying(seq: Long, amsId: Int, settings: DryingSettings) =
-        drying(seq, amsId, mode = 1, settings.filament, settings.tempC, settings.hours, settings.rotateSpools)
+        drying(seq, amsId, mode = 1, settings.filament, settings.tempC, settings.hours, settings.rotateSpools, settings.coolingC)
 
     /** Stop drying: mode 0 with no temperature or duration. */
-    fun stopDrying(seq: Long, amsId: Int) = drying(seq, amsId, mode = 0, filament = "", tempC = 0, hours = 0, rotate = false)
+    fun stopDrying(seq: Long, amsId: Int) =
+        drying(seq, amsId, mode = 0, filament = "", tempC = 0, hours = 0, rotate = false, coolingC = DryingPreset.DEFAULT_COOLING_C)
 
-    private fun drying(seq: Long, amsId: Int, mode: Int, filament: String, tempC: Int, hours: Int, rotate: Boolean) = buildJsonObject {
+    private fun drying(seq: Long, amsId: Int, mode: Int, filament: String, tempC: Int, hours: Int, rotate: Boolean, coolingC: Int) = buildJsonObject {
         putJsonObject("print") {
             put("sequence_id", seq.toString())
             put("command", "ams_filament_drying")
@@ -58,7 +59,7 @@ object PrinterCommands {
             put("duration", hours)
             put("humidity", 0)
             put("rotate_tray", rotate)
-            put("cooling_temp", DryingSettings.COOLING_C)
+            put("cooling_temp", coolingC)
             put("close_power_conflict", false)
         }
     }.toString()

@@ -212,10 +212,10 @@ class DemoPrinter(
                             put("temp", if (drying != null) dryTempC.toString() else "26.5")
                             put("dry_time", drying?.let { ceil(it / 60).toInt() } ?: 0)
                             put("tray", buildJsonArray {
-                                add(tray(0, "PLA", "PLA Basic", "FFFFFFFF", 64))
-                                add(tray(1, "PLA", "PLA Basic", "F4B04AFF", 88))
-                                add(tray(2, "PETG", "PETG Basic", "000000FF", 71))
-                                add(tray(3, "PETG", "PETG Translucent", "00000000", 23))
+                                add(tray(0, "PLA", "PLA Basic", "GFA00", "FFFFFFFF", 64))
+                                add(tray(1, "PLA", "PLA Basic", "GFA00", "F4B04AFF", 88))
+                                add(tray(2, "PETG", "PETG Basic", "GFG00", "000000FF", 71))
+                                add(tray(3, "PETG", "PETG Translucent", "GFG01", "00000000", 23))
                             })
                         })
                     }
@@ -226,10 +226,11 @@ class DemoPrinter(
 
     private fun newTaskId() = "demo-${clock()}"
 
-    private fun tray(id: Int, type: String, name: String, color: String, remain: Int) = buildJsonObject {
+    private fun tray(id: Int, type: String, name: String, filamentId: String, color: String, remain: Int) = buildJsonObject {
         put("id", id.toString())
         put("tray_type", type)
         put("tray_sub_brands", name)
+        put("tray_info_idx", filamentId)
         put("tray_color", color)
         put("remain", remain)
         put("tray_weight", "1000")

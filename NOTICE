@@ -18,6 +18,11 @@ Third-party material included in this repository:
   published by Bambu Lab at https://e.bambulab.com/query.php?lang=en, included so that
   printer alerts can be shown in plain language. Refreshed by tools/update_hms.py.
 
+- AMS drying presets (protocol/src/main/resources/drying_presets.tsv): the drying
+  temperatures, times and limits from the filament profiles in Bambu Studio
+  (https://github.com/bambulab/BambuStudio, GNU AGPL v3), so the app suggests the same
+  values as Bambu's own software. Refreshed by tools/update_drying.py.
+
 - Bambu Lab CA certificates (app/src/main/res/raw/bbl_ca.pem): the public root
   certificates "BBL CA", "BBL CA2 RSA" and "BBL CA2 ECC", and the per-model device CAs
   for the H2C, P2S and X2D, which issue the certificates Bambu Lab printers present on

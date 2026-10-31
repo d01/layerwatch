@@ -25,13 +25,13 @@ class PrinterCommandsTest {
 
     @Test fun dryingMatchesWhatTheX1cAccepted() {
         assertEquals(
-            """{"print":{"sequence_id":"6","command":"ams_filament_drying","ams_id":0,"mode":1,"filament":"PLA-S",""" +
-                """"temp":60,"duration":8,"humidity":0,"rotate_tray":true,"cooling_temp":45,"close_power_conflict":false}}""",
-            PrinterCommands.startDrying(6, 0, DryingSettings("PLA-S", 60, 8, rotateSpools = true)),
+            """{"print":{"sequence_id":"6","command":"ams_filament_drying","ams_id":0,"mode":1,"filament":"PLA",""" +
+                """"temp":60,"duration":12,"humidity":0,"rotate_tray":true,"cooling_temp":55,"close_power_conflict":false}}""",
+            PrinterCommands.startDrying(6, 0, DryingSettings("PLA", 60, 12, rotateSpools = true, coolingC = 55)),
         )
         assertEquals(
             """{"print":{"sequence_id":"7","command":"ams_filament_drying","ams_id":1,"mode":0,"filament":"",""" +
-                """"temp":0,"duration":0,"humidity":0,"rotate_tray":false,"cooling_temp":45,"close_power_conflict":false}}""",
+                """"temp":0,"duration":0,"humidity":0,"rotate_tray":false,"cooling_temp":50,"close_power_conflict":false}}""",
             PrinterCommands.stopDrying(7, 1),
         )
     }

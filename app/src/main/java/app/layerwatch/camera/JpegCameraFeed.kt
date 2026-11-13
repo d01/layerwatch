@@ -44,7 +44,9 @@ class JpegCameraFeed(private val tls: PrinterTls, private val config: PrinterCon
     fun stop() {
         scope?.cancel()
         scope = null
-        stream?.close() // unblocks a pending read
+        // Unblocks a pending read. Closing a TLS socket writes close_notify, which is network
+        // I/O, and stop() is called from the main thread (the panel's lifecycle effect).
+        stream?.let { cam -> Thread({ runCatching { cam.close() } }, "jpegcam-close").start() }
         _state.update { it.copy(status = CameraState.Status.Stopped) }
     }
 
